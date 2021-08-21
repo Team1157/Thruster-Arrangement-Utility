@@ -155,7 +155,7 @@ ax.plot((-max_rho, max_rho), (0, 0), (0, 0), c="black")
 ax.plot((0, 0), (-max_rho, max_rho), (0, 0), c="black")
 ax.plot((0, 0), (0, 0), (-max_rho, max_rho), c="black")
 
-ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.5)
+ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.8, edgecolors='w')
 ax.view_init(elev=30, azim=-150)
 
 ax.set_xlabel('X (Surge)')
