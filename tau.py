@@ -174,6 +174,7 @@ ax = fig.add_subplot(111, projection='3d', proj_type='ortho')
 ax.set_xlim((max_rho, -max_rho))  # Invert x axis
 ax.set_ylim((-max_rho, max_rho))
 ax.set_zlim((max_rho, -max_rho))  # Invert y axis
+ax.set_box_aspect((1, 1, 1))
 
 # Draw some "axes" so it's clear where (0, 0, 0)
 ax.plot((-max_rho, max_rho), (0, 0), (0, 0), c="black")
