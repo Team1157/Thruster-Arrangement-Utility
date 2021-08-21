@@ -123,7 +123,7 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
 
     current_quadratic[2] -= I_LIMIT #ax^2 + bx + c = I -> ax^2 + bx + (c-I) = 0
 
-    thrust_multiplier = max(np.roots(current_quadratic)) #solve quadratic and take the proper point
+    thrust_multiplier = min(1., max(np.roots(current_quadratic))) #solve quadratic, take the proper point, and clamp it to a maximum of 1.0
     
     output = optimized_result.fun
     output *= thrust_multiplier
@@ -170,7 +170,7 @@ for i in range(np.shape(u)[0]):
 matplotlib.use('TkAgg')
 fig = plt.figure()
 
-ax = fig.add_subplot(111, projection='3d')
+ax = fig.add_subplot(111, projection='3d', proj_type='ortho')
 ax.set_xlim((max_rho, -max_rho))  # Invert x axis
 ax.set_ylim((-max_rho, max_rho))
 ax.set_zlim((max_rho, -max_rho))  # Invert y axis
