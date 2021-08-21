@@ -8,9 +8,11 @@ import matplotlib.pyplot as plt
 import typing as t
 
 
-RESOLUTION = 100  # Runtime is O(n^2) with respect to resolution!
-MAX_THRUSTER_FORCE = [-2.9, 3.71]  # Lifted from the BlueRobotics public performance data (kgf)
-
+RESOLUTION = 100 # Runtime is O(n^2) with respect to resolution!
+MAX_THRUSTER_FORCE = [-2.9, 3.71] # Lifted from the BlueRobotics public performance data (kgf)
+T_I_QUAD_COEF_FWD = [.741, 1.89, -.278] #coefficiants of the quadratic approximating current draw as a function of thrust in the forward direction in the form ax^2 + bx + c
+T_I_QUAD_COEF_REV = [1.36, 2.04, -.231] #reverse direction
+I_LIMIT = 22 #maximum allowable current
 
 class Thruster3D:
     def __init__(self, x, y, z, theta, phi):
@@ -104,8 +106,29 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     ]
     
     optimized_result = linprog(c=objective, A_ub = None, b_ub = None, A_eq = left_of_equality, b_eq = right_of_equality, bounds=bounds, method="highs-ds")
+    
+    thrusts = optimized_result.x #get array of individual thrusts
+    
+    current_quadratic = [0] * 3 #create quadratic represengint current draw as a function of thrust multiplier
+    
+    for thrust in thrusts:
+        if thrust >= 0: #use the forward thrust coefficiants
+            current_quadratic[0] += T_I_QUAD_COEF_FWD[0] * thrust**2 #a * t^2
+            current_quadratic[1] += T_I_QUAD_COEF_FWD[1] * thrust    #b * t
+            current_quadratic[2] += T_I_QUAD_COEF_FWD[2]             #c
+        else: #use the reverse thrust coefficiants
+            current_quadratic[0] += T_I_QUAD_COEF_REV[0] * thrust**2
+            current_quadratic[1] += T_I_QUAD_COEF_REV[1] * -thrust #faces the correct direction
+            current_quadratic[2] += T_I_QUAD_COEF_REV[2] 
 
-    return optimized_result.fun
+    current_quadratic[2] -= I_LIMIT #ax^2 + bx + c = I -> ax^2 + bx + (c-I) = 0
+
+    thrust_multiplier = max(np.roots(current_quadratic)) #solve quadratic and take the proper point
+    
+    output = optimized_result.fun
+    output *= thrust_multiplier
+
+    return output
 
 # Load the thruster data from a json file
 with open("thrusters.json") as input_file:
@@ -121,6 +144,8 @@ torque_constraints = []
 for thruster in thrusters:
     torque_constraints.append(thruster.torque())
 
+#get_max_thrust(thrusters, np.array([-1, 0, 0]), torque_constraints)
+#'''
 #  I have no idea what np.meshgrid does
 u, v = np.mgrid[0:2*np.pi:RESOLUTION * 1j, 0:np.pi: RESOLUTION / 2 * 1j]
 np.empty(np.shape(u))
@@ -155,7 +180,7 @@ ax.plot((-max_rho, max_rho), (0, 0), (0, 0), c="black")
 ax.plot((0, 0), (-max_rho, max_rho), (0, 0), c="black")
 ax.plot((0, 0), (0, 0), (-max_rho, max_rho), c="black")
 
-ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.8, edgecolors='w')
+ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.8, edgecolors='w', linewidth=.1)
 ax.view_init(elev=30, azim=-150)
 
 ax.set_xlabel('X (Surge)')
@@ -163,3 +188,4 @@ ax.set_ylabel('Y (Sway)')
 ax.set_zlabel('Z (Heave)')
 
 plt.show()
+#'''
