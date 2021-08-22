@@ -6,7 +6,8 @@ import matplotlib
 from matplotlib import cm
 import matplotlib.pyplot as plt
 import typing as t
-
+import sys
+from pathlib import Path
 
 RESOLUTION = 100 # Runtime is O(n^2) with respect to resolution!
 MAX_THRUSTER_FORCE = [-2.9, 3.71] # Lifted from the BlueRobotics public performance data (kgf)
@@ -105,7 +106,7 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
         0, #z torque
     ]
     
-    optimized_result = linprog(c=objective, A_ub = None, b_ub = None, A_eq = left_of_equality, b_eq = right_of_equality, bounds=bounds, method="highs-ds")
+    optimized_result = linprog(c=objective, A_ub = None, b_ub = None, A_eq = left_of_equality, b_eq = right_of_equality, bounds=bounds, method="highs")
     
     thrusts = optimized_result.x #get array of individual thrusts
     
@@ -128,10 +129,22 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     output = optimized_result.fun
     output *= thrust_multiplier
 
+    print(left_of_equality)
+    print(optimized_result)
+
     return output
 
+in_file = ""
+
+if(len(sys.argv) >= 2):
+    in_file = sys.argv[1]
+
+if Path(in_file).is_file() == False:
+    in_file = "thrusters.json"  
+    print("invalid file name, using \"thrusters.json\"")
+
 # Load the thruster data from a json file
-with open("thrusters.json") as input_file:
+with open(in_file) as input_file:
     input_transforms = json.loads(input_file.read())
 
 thrusters = []
@@ -167,6 +180,9 @@ for i in range(np.shape(u)[0]):
         max_rho = max(max_rho, rho)
 max_rho = np.ceil(max_rho)
 
+color_index = np.sqrt(mesh_x**2 + mesh_y**2 + mesh_z**2,)
+color_index = color_index/color_index.max()
+
 # Display the result
 matplotlib.use('TkAgg')
 fig = plt.figure()
@@ -182,7 +198,7 @@ ax.plot((-max_rho, max_rho), (0, 0), (0, 0), c="black")
 ax.plot((0, 0), (-max_rho, max_rho), (0, 0), c="black")
 ax.plot((0, 0), (0, 0), (-max_rho, max_rho), c="black")
 
-ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.8, edgecolors='w', linewidth=.1)
+ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.8, facecolors=cm.hsv(color_index), edgecolors='w', linewidth=.1)
 ax.view_init(elev=30, azim=-150)
 
 ax.set_xlabel('X (Surge)')
@@ -190,4 +206,3 @@ ax.set_ylabel('Y (Sway)')
 ax.set_zlabel('Z (Heave)')
 
 plt.show()
-#'''
