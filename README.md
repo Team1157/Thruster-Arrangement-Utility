@@ -10,6 +10,5 @@ Note that the coordinate system for this program uses aircraft-style coordinates
 TODO:
  - add mode for max torque output at zero thrust
  - add a GUI
- - color the output surface based on its distance from the origin.
  - make the output surface less jagged
  - add a way to show individual thruster values at a given point

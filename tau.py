@@ -11,8 +11,8 @@ from pathlib import Path
 
 RESOLUTION = 100 # Runtime is O(n^2) with respect to resolution!
 MAX_THRUSTER_FORCE = [-2.9, 3.71] # Lifted from the BlueRobotics public performance data (kgf)
-T_I_QUAD_COEF_FWD = [.741,  1.89, -.278] #coefficiants of the quadratic approximating current draw as a function of thrust in the forward direction in the form ax^2 + bx + c
-T_I_QUAD_COEF_REV = [1.36, -2.04, -.231] #reverse direction
+T_I_QUAD_COEF_FWD = [.741, 1.89, -.278] #coefficiants of the quadratic approximating current draw as a function of thrust in the forward direction in the form ax^2 + bx + c
+T_I_QUAD_COEF_REV = [1.36, 2.04, -.231] #reverse direction
 I_LIMIT = 22 #maximum allowable current
 
 class Thruster3D:
@@ -185,8 +185,8 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
             current_quadratic[1] += T_I_QUAD_COEF_FWD[1] * thrust    #b * t
             current_quadratic[2] += T_I_QUAD_COEF_FWD[2]             #c
         else: #use the reverse thrust coefficiants
-            current_quadratic[0] += T_I_QUAD_COEF_REV[0] * thrust**2
-            current_quadratic[1] += T_I_QUAD_COEF_REV[1] * thrust
+            current_quadratic[0] += T_I_QUAD_COEF_REV[0] * (-thrust)**2
+            current_quadratic[1] += T_I_QUAD_COEF_REV[1] * (-thrust)
             current_quadratic[2] += T_I_QUAD_COEF_REV[2] 
 
     current_quadratic[2] -= I_LIMIT #ax^2 + bx + c = I -> ax^2 + bx + (c-I) = 0
