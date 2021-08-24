@@ -151,7 +151,7 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
         
         
         bounds_mincurrent.append((0, 3.71))
-        bounds_mincurrent.append((0, 2,90))
+        bounds_mincurrent.append((0, 2.90))
         
     left_of_equality_mincurrent.append(thrusts_x_mincurrent)
     left_of_equality_mincurrent.append(thrusts_y_mincurrent)
@@ -174,6 +174,31 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     
     print(min_current_result)
     
+    
+    min_current_doubled_array = min_current_result.x
+    
+    min_current_true_array = []
+    for i in range(0, len(min_current_doubled_array)-1, 2):
+        min_current_true_array.append(min_current_doubled_array[i] - min_current_doubled_array[i + 1])
+    #current limiting code
+    current_quadratic = [0] * 3
+    
+    for thrust in min_current_true_array:
+        if thrust >= 0: #use the forward thrust coefficiants
+            current_quadratic[0] += T_I_QUAD_COEF_FWD[0] * thrust**2 #a * t^2
+            current_quadratic[1] += T_I_QUAD_COEF_FWD[1] * thrust    #b * t
+            current_quadratic[2] += T_I_QUAD_COEF_FWD[2]             #c
+        else: #use the reverse thrust coefficiants
+            current_quadratic[0] += T_I_QUAD_COEF_REV[0] * thrust**2
+            current_quadratic[1] += T_I_QUAD_COEF_REV[1] * thrust #faces the correct direction
+            current_quadratic[2] += T_I_QUAD_COEF_REV[2] 
+
+    current_quadratic[2] -= I_LIMIT #ax^2 + bx + c = I -> ax^2 + bx + (c-I) = 0
+
+    thrust_multiplier = min(1., max(np.roots(current_quadratic))) #solve quadratic, take the proper point, and clamp it to a maximum of 1.0
+    
+    print(np.array(min_current_true_array) * thrust_multiplier)
+
     return 1
 
 in_file = ""
@@ -199,7 +224,7 @@ torque_constraints = []
 for thruster in thrusters:
     torque_constraints.append(thruster.torque())
 
-get_max_thrust(thrusters, np.array([-1, 0, 0]), torque_constraints)
+get_max_thrust(thrusters, np.array([1, 0, 0]), torque_constraints)
 '''
 #  I have no idea what np.meshgrid does
 u, v = np.mgrid[0:2*np.pi:RESOLUTION * 1j, 0:np.pi: RESOLUTION / 2 * 1j]
