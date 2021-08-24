@@ -246,7 +246,7 @@ for i in range(np.shape(u)[0]):
 max_rho = np.ceil(max_rho)
 
 color_index = np.sqrt(mesh_x**2 + mesh_y**2 + mesh_z**2,)
-color_index = color_index/color_index.max()
+color_index = (color_index - color_index.min())/(color_index.max() - color_index.min())
 
 # Display the result
 matplotlib.use('TkAgg')
@@ -263,7 +263,7 @@ ax.plot((-max_rho, max_rho), (0, 0), (0, 0), c="black")
 ax.plot((0, 0), (-max_rho, max_rho), (0, 0), c="black")
 ax.plot((0, 0), (0, 0), (-max_rho, max_rho), c="black")
 
-ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=1.0, facecolors=cm.hsv(color_index), edgecolors='w', linewidth=.1)
+ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=1.0, facecolors=cm.jet(color_index), edgecolors='w', linewidth=.1)
 ax.view_init(elev=30, azim=-150)
 
 ax.set_xlabel('X (Surge)')
