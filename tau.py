@@ -66,7 +66,7 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     # Calculate the transformation with matrix_vector multiplication
     transformed_orientations = inverse_transform.dot(orientations).transpose()
 
-    #START OF SIMPLEX CODE
+    #First Simplex run. Find the maximum thrust in the desired direction
     objective = []
     left_of_equality = []
     
@@ -106,33 +106,75 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
         0, #z torque
     ]
     
-    optimized_result = linprog(c=objective, A_ub = None, b_ub = None, A_eq = left_of_equality, b_eq = right_of_equality, bounds=bounds, method="highs")
+    max_thrust_result = linprog(c=objective, A_ub = None, b_ub = None, A_eq = left_of_equality, b_eq = right_of_equality, bounds=bounds, method="highs")
     
-    thrusts = optimized_result.x #get array of individual thrusts
+    print(max_thrust_result)
     
-    current_quadratic = [0] * 3 #create quadratic represengint current draw as a function of thrust multiplier
+    max_thrust = max_thrust_result.fun
     
-    for thrust in thrusts:
-        if thrust >= 0: #use the forward thrust coefficiants
-            current_quadratic[0] += T_I_QUAD_COEF_FWD[0] * thrust**2 #a * t^2
-            current_quadratic[1] += T_I_QUAD_COEF_FWD[1] * thrust    #b * t
-            current_quadratic[2] += T_I_QUAD_COEF_FWD[2]             #c
-        else: #use the reverse thrust coefficiants
-            current_quadratic[0] += T_I_QUAD_COEF_REV[0] * thrust**2
-            current_quadratic[1] += T_I_QUAD_COEF_REV[1] * thrust #faces the correct direction
-            current_quadratic[2] += T_I_QUAD_COEF_REV[2] 
-
-    current_quadratic[2] -= I_LIMIT #ax^2 + bx + c = I -> ax^2 + bx + (c-I) = 0
-
-    thrust_multiplier = min(1., max(np.roots(current_quadratic))) #solve quadratic, take the proper point, and clamp it to a maximum of 1.0
+    #Second Simplex run. Find the minimum current that produces the same thrust as the first result
+    objective_mincurrent = []
+    left_of_equality_mincurrent = []
     
-    output = optimized_result.fun
-    output *= thrust_multiplier
+    thrusts_x_mincurrent = []
+    thrusts_y_mincurrent = []
+    thrusts_z_mincurrent = []
+    
+    torques_x_mincurrent = []
+    torques_y_mincurrent = []
+    torques_z_mincurrent = []
+    
+    bounds_mincurrent = []
 
-    print(left_of_equality)
-    print(optimized_result)
-
-    return output
+    for i, orientation in enumerate(transformed_orientations, start = 0):
+        objective_mincurrent.append(1)
+        objective_mincurrent.append(1)
+        
+        thrusts_x_mincurrent.append(orientation[0])
+        thrusts_x_mincurrent.append(-orientation[0])
+        
+        thrusts_y_mincurrent.append(orientation[1])
+        thrusts_y_mincurrent.append(-orientation[1])
+        
+        thrusts_z_mincurrent.append(orientation[2])
+        thrusts_z_mincurrent.append(-orientation[2])
+        
+        
+        torques_x_mincurrent.append(t_constraints[i][0])
+        torques_x_mincurrent.append(-t_constraints[i][0])
+        
+        torques_y_mincurrent.append(t_constraints[i][1])
+        torques_y_mincurrent.append(-t_constraints[i][1])
+        
+        torques_z_mincurrent.append(t_constraints[i][2])
+        torques_z_mincurrent.append(-t_constraints[i][2])
+        
+        
+        bounds_mincurrent.append((0, 3.71))
+        bounds_mincurrent.append((0, 2,90))
+        
+    left_of_equality_mincurrent.append(thrusts_x_mincurrent)
+    left_of_equality_mincurrent.append(thrusts_y_mincurrent)
+    left_of_equality_mincurrent.append(thrusts_z_mincurrent)
+    
+    left_of_equality_mincurrent.append(torques_x_mincurrent)
+    left_of_equality_mincurrent.append(torques_y_mincurrent)
+    left_of_equality_mincurrent.append(torques_z_mincurrent)
+    
+    right_of_equality_mincurrent = [
+        max_thrust, #x thrust
+        0, #y thrust
+        0, #z thrust
+        0, #x torque
+        0, #y torque
+        0, #z torque
+    ]
+    
+    min_current_result = linprog(c=objective_mincurrent, A_ub = None, b_ub = None, A_eq = left_of_equality_mincurrent, b_eq = right_of_equality_mincurrent, bounds=bounds_mincurrent, method="highs")
+    
+    print(min_current_result)
+    
+    return 1
 
 in_file = ""
 
@@ -157,8 +199,8 @@ torque_constraints = []
 for thruster in thrusters:
     torque_constraints.append(thruster.torque())
 
-#get_max_thrust(thrusters, np.array([-1, 0, 0]), torque_constraints)
-#'''
+get_max_thrust(thrusters, np.array([-1, 0, 0]), torque_constraints)
+'''
 #  I have no idea what np.meshgrid does
 u, v = np.mgrid[0:2*np.pi:RESOLUTION * 1j, 0:np.pi: RESOLUTION / 2 * 1j]
 np.empty(np.shape(u))
@@ -206,3 +248,4 @@ ax.set_ylabel('Y (Sway)')
 ax.set_zlabel('Z (Heave)')
 
 plt.show()
+'''
