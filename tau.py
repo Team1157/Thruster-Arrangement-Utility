@@ -199,9 +199,6 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     for i in range(0, len(min_current_true_array)):
         thrust_value += min_current_true_array[i] * transformed_orientations[i][0]
     
-    #print(abs(max_thrust - thrust_value)/max_thrust)
-    print(thrust_multiplier)
-    
     return thrust_value * thrust_multiplier
 
 in_file = ""
