@@ -80,7 +80,7 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     bounds = []
     
     for i, orientation in enumerate(transformed_orientations, start = 0):
-        objective.append(orientation[0])
+        objective.append(-orientation[0])
         
         thrusts_y.append(orientation[1])
         thrusts_z.append(orientation[2])
@@ -107,11 +107,9 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     ]
     
     max_thrust_result = linprog(c=objective, A_ub = None, b_ub = None, A_eq = left_of_equality, b_eq = right_of_equality, bounds=bounds, method="highs")
-    
-    print(max_thrust_result)
-    
-    max_thrust = max_thrust_result.fun
-    
+    #print(max_thrust_result.x)
+    max_thrust = -0.999 * max_thrust_result.fun #some sort of precision/numerical error makes this bullshit necessary
+    #return max_thrust
     #Second Simplex run. Find the minimum current that produces the same thrust as the first result
     objective_mincurrent = []
     left_of_equality_mincurrent = []
@@ -170,16 +168,16 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
         0, #z torque
     ]
     
-    min_current_result = linprog(c=objective_mincurrent, A_ub = None, b_ub = None, A_eq = left_of_equality_mincurrent, b_eq = right_of_equality_mincurrent, bounds=bounds_mincurrent, method="highs")
-    
-    print(min_current_result)
-    
-    
+    min_current_result = linprog(c=objective_mincurrent, A_ub = None, b_ub = None, A_eq = left_of_equality_mincurrent, b_eq = right_of_equality_mincurrent, bounds=bounds_mincurrent, method="highs")    
+    #print(min_current_result)
+    #print()
     min_current_doubled_array = min_current_result.x
     
     min_current_true_array = []
     for i in range(0, len(min_current_doubled_array)-1, 2):
         min_current_true_array.append(min_current_doubled_array[i] - min_current_doubled_array[i + 1])
+    #print(min_current_true_array)
+    #print()
     #current limiting code
     current_quadratic = [0] * 3
     
@@ -190,16 +188,21 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
             current_quadratic[2] += T_I_QUAD_COEF_FWD[2]             #c
         else: #use the reverse thrust coefficiants
             current_quadratic[0] += T_I_QUAD_COEF_REV[0] * thrust**2
-            current_quadratic[1] += T_I_QUAD_COEF_REV[1] * thrust #faces the correct direction
+            current_quadratic[1] += T_I_QUAD_COEF_REV[1] * thrust
             current_quadratic[2] += T_I_QUAD_COEF_REV[2] 
 
     current_quadratic[2] -= I_LIMIT #ax^2 + bx + c = I -> ax^2 + bx + (c-I) = 0
 
     thrust_multiplier = min(1., max(np.roots(current_quadratic))) #solve quadratic, take the proper point, and clamp it to a maximum of 1.0
     
-    print(np.array(min_current_true_array) * thrust_multiplier)
-
-    return 1
+    thrust_value = 0
+    for i in range(0, len(min_current_true_array)):
+        thrust_value += min_current_true_array[i] * transformed_orientations[i][0]
+    
+    #print(abs(max_thrust - thrust_value)/max_thrust)
+    print(thrust_multiplier)
+    
+    return thrust_value * thrust_multiplier
 
 in_file = ""
 
@@ -224,8 +227,8 @@ torque_constraints = []
 for thruster in thrusters:
     torque_constraints.append(thruster.torque())
 
-get_max_thrust(thrusters, np.array([1, 0, 0]), torque_constraints)
-'''
+#get_max_thrust(thrusters, np.array([1, 0, 0]), torque_constraints)
+
 #  I have no idea what np.meshgrid does
 u, v = np.mgrid[0:2*np.pi:RESOLUTION * 1j, 0:np.pi: RESOLUTION / 2 * 1j]
 np.empty(np.shape(u))
@@ -240,7 +243,7 @@ for i in range(np.shape(u)[0]):
         x = math.cos(u[i][j]) * math.sin(v[i][j])
         y = math.sin(u[i][j]) * math.sin(v[i][j])
         z = math.cos(v[i][j])
-        rho = -get_max_thrust(thrusters, np.array([x, y, z]), torque_constraints)
+        rho = get_max_thrust(thrusters, np.array([x, y, z]), torque_constraints)
         mesh_x[i][j] = x * rho
         mesh_y[i][j] = y * rho
         mesh_z[i][j] = z * rho
@@ -273,4 +276,3 @@ ax.set_ylabel('Y (Sway)')
 ax.set_zlabel('Z (Heave)')
 
 plt.show()
-'''
