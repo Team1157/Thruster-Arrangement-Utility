@@ -80,7 +80,7 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     bounds = []
     
     for i, orientation in enumerate(transformed_orientations, start = 0):
-        objective.append(-orientation[0])
+        objective.append(-orientation[0]) #Algorithm minimizes only, so the objective function needs to be negated.
         
         thrusts_y.append(orientation[1])
         thrusts_z.append(orientation[2])
@@ -107,9 +107,9 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     ]
     
     max_thrust_result = linprog(c=objective, A_ub = None, b_ub = None, A_eq = left_of_equality, b_eq = right_of_equality, bounds=bounds, method="highs")
-    #print(max_thrust_result.x)
-    max_thrust = -0.999 * max_thrust_result.fun #some sort of precision/numerical error makes this bullshit necessary
-    #return max_thrust
+
+    max_thrust = -.999 * max_thrust_result.fun #some sort of precision/numerical error makes this bullshit necessary
+
     #Second Simplex run. Find the minimum current that produces the same thrust as the first result
     objective_mincurrent = []
     left_of_equality_mincurrent = []
@@ -125,11 +125,12 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     bounds_mincurrent = []
 
     for i, orientation in enumerate(transformed_orientations, start = 0):
-        objective_mincurrent.append(1)
+        #duplicate each thruster into a forward and a reverse half-thruster
+        objective_mincurrent.append(1) #minimize the thrust of all thrusters weighted equally
         objective_mincurrent.append(1)
         
         thrusts_x_mincurrent.append(orientation[0])
-        thrusts_x_mincurrent.append(-orientation[0])
+        thrusts_x_mincurrent.append(-orientation[0]) #duplicate, reversed thruster
         
         thrusts_y_mincurrent.append(orientation[1])
         thrusts_y_mincurrent.append(-orientation[1])
@@ -160,7 +161,7 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     left_of_equality_mincurrent.append(torques_z_mincurrent)
     
     right_of_equality_mincurrent = [
-        max_thrust, #x thrust
+        max_thrust, #x thrust constrained to previous maximum
         0, #y thrust
         0, #z thrust
         0, #x torque
@@ -169,16 +170,13 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     ]
     
     min_current_result = linprog(c=objective_mincurrent, A_ub = None, b_ub = None, A_eq = left_of_equality_mincurrent, b_eq = right_of_equality_mincurrent, bounds=bounds_mincurrent, method="highs")    
-    #print(min_current_result)
-    #print()
-    min_current_doubled_array = min_current_result.x
+
+    min_current_duplicated_array = min_current_result.x
     
     min_current_true_array = []
-    for i in range(0, len(min_current_doubled_array)-1, 2):
-        min_current_true_array.append(min_current_doubled_array[i] - min_current_doubled_array[i + 1])
-    #print(min_current_true_array)
-    #print()
-    #current limiting code
+    for i in range(0, len(min_current_duplicated_array)-1, 2):
+        min_current_true_array.append(min_current_duplicated_array[i] - min_current_duplicated_array[i + 1]) #combine half-thrusters into full thrusters
+
     current_quadratic = [0] * 3
     
     for thrust in min_current_true_array:
@@ -197,7 +195,7 @@ def get_max_thrust(thrusters: t.List[Thruster3D], target_dir: np.ndarray, t_cons
     
     thrust_value = 0
     for i in range(0, len(min_current_true_array)):
-        thrust_value += min_current_true_array[i] * transformed_orientations[i][0]
+        thrust_value += min_current_true_array[i] * transformed_orientations[i][0] #get total thrust in target direction
     
     return thrust_value * thrust_multiplier
 
@@ -265,7 +263,7 @@ ax.plot((-max_rho, max_rho), (0, 0), (0, 0), c="black")
 ax.plot((0, 0), (-max_rho, max_rho), (0, 0), c="black")
 ax.plot((0, 0), (0, 0), (-max_rho, max_rho), c="black")
 
-ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.8, facecolors=cm.hsv(color_index), edgecolors='w', linewidth=.1)
+ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=1.0, facecolors=cm.hsv(color_index), edgecolors='w', linewidth=.1)
 ax.view_init(elev=30, azim=-150)
 
 ax.set_xlabel('X (Surge)')
