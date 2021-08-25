@@ -263,7 +263,26 @@ ax.plot((-max_rho, max_rho), (0, 0), (0, 0), c="black")
 ax.plot((0, 0), (-max_rho, max_rho), (0, 0), c="black")
 ax.plot((0, 0), (0, 0), (-max_rho, max_rho), c="black")
 
-ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=1.0, facecolors=cm.jet(color_index), edgecolors='w', linewidth=.1)
+thrusterloc_x = []
+thrusterloc_y = []
+thrusterloc_z = []
+
+thrusterdir_x = []
+thrusterdir_y = []
+thrusterdir_z = []
+
+for thruster in thrusters:
+    thrusterloc_x.append(2*thruster.pos[0])
+    thrusterloc_y.append(2*thruster.pos[1])
+    thrusterloc_z.append(2*thruster.pos[2])
+    
+    thrusterdir_x.append(2*thruster.orientation[0])
+    thrusterdir_y.append(2*thruster.orientation[1])
+    thrusterdir_z.append(2*thruster.orientation[2])
+
+ax.quiver(thrusterloc_x, thrusterloc_y, thrusterloc_z, thrusterdir_x, thrusterdir_y, thrusterdir_z)
+
+ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.5, facecolors=cm.jet(color_index), edgecolors='w', linewidth=.1)
 ax.view_init(elev=30, azim=-150)
 
 ax.set_xlabel('X (Surge)')
