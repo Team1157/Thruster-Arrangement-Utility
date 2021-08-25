@@ -246,7 +246,10 @@ for i in range(np.shape(u)[0]):
 max_rho = np.ceil(max_rho)
 
 color_index = np.sqrt(mesh_x**2 + mesh_y**2 + mesh_z**2,)
-color_index = (color_index - color_index.min())/(color_index.max() - color_index.min())
+
+norm = matplotlib.colors.Normalize(vmin = color_index.min(), vmax = color_index.max())
+
+color_index_modified = (color_index - color_index.min())/(color_index.max() - color_index.min())
 
 # Display the result
 matplotlib.use('TkAgg')
@@ -282,8 +285,12 @@ for thruster in thrusters:
 
 ax.quiver(thrusterloc_x, thrusterloc_y, thrusterloc_z, thrusterdir_x, thrusterdir_y, thrusterdir_z)
 
-ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.5, facecolors=cm.jet(color_index), edgecolors='w', linewidth=.1)
+ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.5, facecolors=cm.jet(color_index_modified), edgecolors='w', linewidth=.1)
 ax.view_init(elev=30, azim=-150)
+
+m = cm.ScalarMappable(cmap=plt.cm.jet, norm=norm)
+m.set_array([])
+plt.colorbar(m, ticks=[color_index.min(), color_index.max()])
 
 ax.set_xlabel('X (Surge)')
 ax.set_ylabel('Y (Sway)')
