@@ -1,4 +1,3 @@
-import math
 import numpy as np
 from scipy.optimize import linprog
 import json
@@ -8,6 +7,7 @@ import matplotlib.pyplot as plt
 import typing as t
 import sys
 from pathlib import Path
+import time
 
 RESOLUTION = 100 # Runtime is O(n^2) with respect to resolution!
 MAX_THRUSTER_FORCE = [-2.9, 3.71] # Lifted from the BlueRobotics public performance data (kgf)
@@ -20,12 +20,12 @@ class Thruster3D:
         self.pos = np.array([x, y, z])
 
         # Calculate the unit vector in the direction specified by theta and phi
-        theta = math.radians(theta)
-        phi = math.radians(phi)
+        theta = np.radians(theta)
+        phi = np.radians(phi)
         self.orientation = np.array([
-            math.sin(phi) * math.cos(theta),
-            math.sin(phi) * math.sin(theta),
-            math.cos(phi)
+            np.sin(phi) * np.cos(theta),
+            np.sin(phi) * np.sin(theta),
+            np.cos(phi)
         ])
     def torque(self):
         return np.cross(self.pos, self.orientation)
@@ -212,6 +212,8 @@ if Path(in_file).is_file() == False:
 with open(in_file) as input_file:
     input_transforms = json.loads(input_file.read())
 
+start_time = time.process_time()
+
 thrusters = []
 for transform in input_transforms:
     thrusters.append(Thruster3D(transform['x'], transform['y'], transform['z'], transform['theta'], transform['phi']))
@@ -235,9 +237,9 @@ mesh_z = np.empty(np.shape(u))
 max_rho = 0
 for i in range(np.shape(u)[0]):
     for j in range(np.shape(u)[1]):
-        x = math.cos(u[i][j]) * math.sin(v[i][j])
-        y = math.sin(u[i][j]) * math.sin(v[i][j])
-        z = math.cos(v[i][j])
+        x = np.cos(u[i][j]) * np.sin(v[i][j])
+        y = np.sin(u[i][j]) * np.sin(v[i][j])
+        z = np.cos(v[i][j])
         rho = get_max_thrust(thrusters, np.array([x, y, z]), torque_constraints)
         mesh_x[i][j] = x * rho
         mesh_y[i][j] = y * rho
@@ -283,14 +285,16 @@ for thruster in thrusters:
     thrusterdir_y.append(2*thruster.orientation[1])
     thrusterdir_z.append(2*thruster.orientation[2])
 
-ax.quiver(thrusterloc_x, thrusterloc_y, thrusterloc_z, thrusterdir_x, thrusterdir_y, thrusterdir_z)
+ax.quiver(thrusterloc_x, thrusterloc_y, thrusterloc_z, thrusterdir_x, thrusterdir_y, thrusterdir_z, color="black")
 
-ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.5, facecolors=cm.jet(color_index_modified), edgecolors='w', linewidth=.1)
+ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.6, facecolors=cm.jet(color_index_modified), edgecolors='w', linewidth=0)
 ax.view_init(elev=30, azim=-150)
 
 m = cm.ScalarMappable(cmap=plt.cm.jet, norm=norm)
 m.set_array([])
-plt.colorbar(m, ticks=[color_index.min(), color_index.max()])
+
+color_range = color_index.max() - color_index.min()
+plt.colorbar(m, ticks=[color_index.min(), color_index.min() + color_range/4, color_index.min() + color_range/2, color_index.min() + 3*color_range/4,color_index.max()])
 
 ax.set_xlabel('X (Surge)')
 ax.set_ylabel('Y (Sway)')
