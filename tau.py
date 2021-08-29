@@ -1,4 +1,3 @@
-import math
 import numpy as np
 from scipy.optimize import linprog
 import json
@@ -12,8 +11,7 @@ import time
 
 RESOLUTION = 100  # Runtime is O(n^2) with respect to resolution!
 MAX_THRUSTER_FORCE = [-2.9, 3.71]  # Lifted from the BlueRobotics public performance data (kgf)
-T_I_QUAD_COEF_FWD = [.741, 1.89,
-                     -.278]  # coefficiants of the quadratic approximating current draw as a function of thrust in
+T_I_QUAD_COEF_FWD = [.741, 1.89, -.278]  # coefficiants of the quadratic approximating current draw as a function of thrust in
 # the forward direction in the form ax^2 + bx + c
 T_I_QUAD_COEF_REV = [1.36, 2.04, -.231]  # reverse direction
 I_LIMIT = 22  # maximum allowable current
@@ -24,12 +22,12 @@ class Thruster3D:
         self.pos = np.array([x, y, z])
 
         # Calculate the unit vector in the direction specified by theta and phi
-        theta = math.radians(theta)
-        phi = math.radians(phi)
+        theta = np.radians(theta)
+        phi = np.radians(phi)
         self.orientation = np.array([
-            math.sin(phi) * math.cos(theta),
-            math.sin(phi) * math.sin(theta),
-            math.cos(phi)
+            np.sin(phi) * np.cos(theta),
+            np.sin(phi) * np.sin(theta),
+            np.cos(phi)
         ])
 
     def torque(self):
