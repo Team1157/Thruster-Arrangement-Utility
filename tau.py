@@ -237,9 +237,9 @@ mesh_z = np.empty(np.shape(u))
 max_rho = 0
 for i in range(np.shape(u)[0]):
     for j in range(np.shape(u)[1]):
-        x = np.cos(u[i][j]) * np.sin(v[i][j])
+        z = np.cos(u[i][j]) * np.sin(v[i][j])
         y = np.sin(u[i][j]) * np.sin(v[i][j])
-        z = np.cos(v[i][j])
+        x = np.cos(v[i][j])
         rho = get_max_thrust(thrusters, np.array([x, y, z]), torque_constraints)
         mesh_x[i][j] = x * rho
         mesh_y[i][j] = y * rho
