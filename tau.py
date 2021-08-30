@@ -75,7 +75,7 @@ def transform_orientations(thrusters: t.List[Thruster3D], target_dir: np.ndarray
     return transformed_orientations
 
 
-def get_max_thrust(transformed_orientations, torques: np.ndarray, max_current: int):
+def get_max_thrust(thrusters, transformed_orientations, torques: np.ndarray, max_current: int):
     thruster_count = len(torques)
 
     # First Simplex run. Find the maximum thrust in the desired direction
@@ -84,7 +84,7 @@ def get_max_thrust(transformed_orientations, torques: np.ndarray, max_current: i
     torques_transpose = torques.transpose()
     left_of_equality = np.row_stack((torques_transpose, transformed_orientations[1:]))
 
-    bounds = [DEFAULT_MAX_THRUSTS for _ in range(thruster_count)]  # TODO: Use the custom thruster specs
+    bounds = [thruster.max_thrusts for thruster in thrusters]
 
     right_of_equality = np.zeros(5)  # There are 5 constraints that must all be 0
 
@@ -128,17 +128,16 @@ def get_max_thrust(transformed_orientations, torques: np.ndarray, max_current: i
 
     current_quadratic = [0] * 3
 
-    for thrust in min_current_true_array:
+    for i, thruster in enumerate(thrusters):
+        thrust = min_current_true_array[i]
         if thrust >= 0:  # use the forward thrust coefficients
-            # TODO: Use customized thruster specs
-            current_quadratic[0] += DEFAULT_FWD_CURRENT[0] * thrust ** 2  # a * t^2
-            current_quadratic[1] += DEFAULT_FWD_CURRENT[1] * thrust  # b * t
-            current_quadratic[2] += DEFAULT_FWD_CURRENT[2]  # c
+            current_quadratic[0] += thruster.fwd_current[0] * thrust ** 2  # a * t^2
+            current_quadratic[1] += thruster.fwd_current[1] * thrust  # b * t
+            current_quadratic[2] += thruster.fwd_current[2]  # c
         else:  # use the reverse thrust coefficients
-            # TODO: Use customized thruster specs
-            current_quadratic[0] += DEFAULT_REV_CURRENT[0] * thrust ** 2
-            current_quadratic[1] += DEFAULT_REV_CURRENT[1] * thrust
-            current_quadratic[2] += DEFAULT_REV_CURRENT[2]
+            current_quadratic[0] += thruster.rev_current[0] * thrust ** 2
+            current_quadratic[1] += thruster.rev_current[1] * thrust
+            current_quadratic[2] += thruster.rev_current[2]
 
     current_quadratic[2] -= max_current  # ax^2 + bx + c = I -> ax^2 + bx + (c-I) = 0
 
@@ -151,7 +150,7 @@ def get_max_thrust(transformed_orientations, torques: np.ndarray, max_current: i
 #####################################
 # Yaw, pitch, roll code
 #####################################
-def calc_max_yaw_pitch_roll(thrusters, torque_constraints):
+def calc_max_yaw_pitch_roll(thrusters, thruster_torques):
     torque_x = []
     torque_y = []
     torque_z = []
@@ -162,19 +161,18 @@ def calc_max_yaw_pitch_roll(thrusters, torque_constraints):
     right_equalities = [0, 0, 0, 0, 0]
     bounds = []
 
-    for i in range(len(torque_constraints)):
-        torque_x.append(torque_constraints[i][0])
-        torque_y.append(torque_constraints[i][1])
-        torque_z.append(torque_constraints[i][2])
+    for i in range(len(thruster_torques)):
+        torque_x.append(thruster_torques[i][0])
+        torque_y.append(thruster_torques[i][1])
+        torque_z.append(thruster_torques[i][2])
         thruster = thrusters[i]
         orientation.append(thruster.orientation)
         constraint3.append(thruster.orientation[0])
         constraint4.append(thruster.orientation[1])
         constraint5.append(thruster.orientation[2])
-        torques = [torque_x, torque_y, torque_z]
-        bounds.append(DEFAULT_MAX_THRUSTS)  # TODO: Use customized thruster specs
+        bounds.append(thrusters[i].max_thrusts)
 
-    for i in range(len(torques)): #?????
+    for i in range(3):
         torques = [torque_x, torque_y, torque_z]
         objective = [torques[i]]
 
@@ -219,7 +217,6 @@ def main(thrusters, resolution: int, max_current: int):
             thruster_raw['theta'],
             thruster_raw['phi'],
             # Optional thruster parameters: dict.get is used to provide a default value if the key doesn't exist
-            # TODO: Use customized thruster specs in the calculations
             thruster_raw.get("max_thrusts", DEFAULT_MAX_THRUSTS),
             thruster_raw.get("fwd_current", DEFAULT_FWD_CURRENT),
             thruster_raw.get("rev_current", DEFAULT_REV_CURRENT)
@@ -246,8 +243,7 @@ def main(thrusters, resolution: int, max_current: int):
             y = np.sin(u[i][j]) * np.sin(v[i][j])
             x = np.cos(v[i][j])
             transformed_orientations = transform_orientations(thrusters, np.array([x, y, z]))
-            # TODO: Need some way to carry over the customized thruster specs with the transformed orientations
-            rho = get_max_thrust(transformed_orientations, thruster_torques, max_current)
+            rho = get_max_thrust(thrusters, transformed_orientations, thruster_torques, max_current)
             mesh_x[i][j] = x * rho
             mesh_y[i][j] = y * rho
             mesh_z[i][j] = z * rho
