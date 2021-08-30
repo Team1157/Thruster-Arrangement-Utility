@@ -195,7 +195,7 @@ def calc_max_yaw_pitch_roll(thrusters, thruster_torques):
 @click.option("--resolution", "-r",
               default=DEFAULT_RESOLUTION,
               help="resolution of the thrust calculation, runtime is O(n^2) with respect to this!"
-)
+              )
 @click.option("--max-current", "-c", default=DEFAULT_MAX_CURRENT, help="maximum thruster current draw in amps")
 def main(thrusters, resolution: int, max_current: int):
     # This doc comment becomes the description text for the --help menu
@@ -233,6 +233,7 @@ def main(thrusters, resolution: int, max_current: int):
     mesh_x = np.empty(np.shape(u))
     mesh_y = np.empty(np.shape(u))
     mesh_z = np.empty(np.shape(u))
+    color_index = np.empty(np.shape(u))
 
     # Iterate over each vertex and calculate the max thrust in that direction
     # Note: Should probably be its own function, then it can be optimized more (i.e. Numba)
@@ -247,11 +248,10 @@ def main(thrusters, resolution: int, max_current: int):
             mesh_x[i][j] = x * rho
             mesh_y[i][j] = y * rho
             mesh_z[i][j] = z * rho
+            color_index[i][j] = rho
             max_rho = max(max_rho, rho)
 
     max_rho = np.ceil(max_rho)
-
-    color_index = np.sqrt(mesh_x**2 + mesh_y**2 + mesh_z**2)
 
     norm = matplotlib.colors.Normalize(vmin=color_index.min(), vmax=color_index.max())
 
@@ -267,7 +267,7 @@ def main(thrusters, resolution: int, max_current: int):
 
     ax.set_xlim((max_rho, -max_rho))  # Invert x axis
     ax.set_ylim((-max_rho, max_rho))
-    ax.set_zlim((max_rho, -max_rho))  # Invert y axis
+    ax.set_zlim((max_rho, -max_rho))  # Invert z axis
 
     ax.set_xlabel('X (Surge)')
     ax.set_ylabel('Y (Sway)')
@@ -302,9 +302,9 @@ def main(thrusters, resolution: int, max_current: int):
     m = cm.ScalarMappable(cmap=plt.cm.jet, norm=norm)
     plt.colorbar(m, ticks=[
         color_index.min(),
-        color_index.min() + color_range/4,
-        color_index.min() + color_range/2,
-        color_index.min() + 3*color_range/4,
+        color_index.min() + color_range / 4,
+        color_index.min() + color_range / 2,
+        color_index.min() + 3 * color_range / 4,
         color_index.max()
     ])
 
