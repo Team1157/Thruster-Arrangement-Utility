@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import typing as t
 import click
 
-DEFAULT_RESOLUTION = 100
+DEFAULT_RESOLUTION = 100  # Runtime is O(n^2) with respect to resolution!
 DEFAULT_MAX_THRUSTS = [-2.9, 3.71]  # Lifted from the BlueRobotics public performance data (kgf)
 # coefficients of the quadratic approximating current draw as a function of thrust in the forward direction in the form:
 # ax^2 + bx + c
@@ -260,7 +260,10 @@ def calc_max_yaw_pitch_roll(thrusters, torque_constraints):
 # All the Click decorators define various options that can be passed in on the command line
 @click.command()
 @click.option("--thrusters", "-t", default="thrusters.json", help="file containing thruster specifications")
-@click.option("--resolution", "-r", default=DEFAULT_RESOLUTION, help="resolution of the thrust calculation")
+@click.option("--resolution", "-r",
+              default=DEFAULT_RESOLUTION,
+              help="resolution of the thrust calculation, runtime is O(n^2) with respect to this!"
+)
 @click.option("--max-current", "-c", default=DEFAULT_MAX_CURRENT, help="maximum thruster current draw in amps")
 def main(thrusters, resolution: int, max_current: int):
     # This doc comment becomes the description text for the --help menu
