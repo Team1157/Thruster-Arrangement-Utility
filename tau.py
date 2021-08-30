@@ -11,8 +11,9 @@ DEFAULT_RESOLUTION = 100  # Runtime is O(n^2) with respect to resolution!
 DEFAULT_MAX_THRUSTS = [-2.9, 3.71]  # Lifted from the BlueRobotics public performance data (kgf)
 # coefficients of the quadratic approximating current draw as a function of thrust in the forward direction in the form:
 # ax^2 + bx + c
+# Both regressions are in terms of the same variable, thrust, which is negative in the reverse direction
 DEFAULT_FWD_CURRENT = [.741, 1.89, -.278]
-DEFAULT_REV_CURRENT = [1.36, 2.04, -.231]  # reverse direction
+DEFAULT_REV_CURRENT = [1.36, -2.04, -.231]  # reverse direction
 DEFAULT_MAX_CURRENT = 22
 
 
@@ -69,51 +70,23 @@ def transform_orientations(thrusters: t.List[Thruster3D], target_dir: np.ndarray
     inverse_transform = np.linalg.inv(new_bases)
 
     # Calculate the transformation with matrix_vector multiplication
-    transformed_orientations = inverse_transform.dot(orientations).transpose()
+    transformed_orientations = inverse_transform.dot(orientations)
 
     return transformed_orientations
 
 
-def get_max_thrust(transformed_orientations, t_constraints: np.ndarray, max_current: int):
+def get_max_thrust(transformed_orientations, torques: np.ndarray, max_current: int):
+    thruster_count = len(torques)
+
     # First Simplex run. Find the maximum thrust in the desired direction
-    objective = []
-    left_of_equality = []
+    objective = -transformed_orientations[0]  # Get the max thrust in the transformed x axis (the target direction)
+    # All other thrusts and torques must be 0
+    torques_transpose = torques.transpose()
+    left_of_equality = np.row_stack((torques_transpose, transformed_orientations[1:]))
 
-    thrusts_y = []
-    thrusts_z = []
+    bounds = [DEFAULT_MAX_THRUSTS for _ in range(thruster_count)]  # TODO: Use the custom thruster specs
 
-    torques_x = []
-    torques_y = []
-    torques_z = []
-
-    bounds = []
-
-    for i, orientation in enumerate(transformed_orientations):
-        objective.append(-orientation[0])  # Algorithm minimizes only, so the objective function needs to be negated.
-
-        thrusts_y.append(orientation[1])
-        thrusts_z.append(orientation[2])
-
-        torques_x.append(t_constraints[i][0])
-        torques_y.append(t_constraints[i][1])
-        torques_z.append(t_constraints[i][2])
-
-        bounds.append(DEFAULT_MAX_THRUSTS)  # TODO: Use the custom thruster specs
-
-    left_of_equality.append(thrusts_y)
-    left_of_equality.append(thrusts_z)
-
-    left_of_equality.append(torques_x)
-    left_of_equality.append(torques_y)
-    left_of_equality.append(torques_z)
-
-    right_of_equality = [
-        0,  # y thrust
-        0,  # z thrust
-        0,  # x torque
-        0,  # y torque
-        0,  # z torque
-    ]
+    right_of_equality = np.zeros(5)  # There are 5 constraints that must all be 0
 
     max_thrust_result = linprog(c=objective, A_ub=None, b_ub=None, A_eq=left_of_equality, b_eq=right_of_equality,
                                 bounds=bounds, method="highs")
@@ -121,52 +94,18 @@ def get_max_thrust(transformed_orientations, t_constraints: np.ndarray, max_curr
     max_thrust = -.999 * max_thrust_result.fun  # some sort of precision/numerical error makes this bullshit necessary
 
     # Second Simplex run. Find the minimum current that produces the same thrust as the first result
-    objective_mincurrent = []
-    left_of_equality_mincurrent = []
 
-    thrusts_x_mincurrent = []
-    thrusts_y_mincurrent = []
-    thrusts_z_mincurrent = []
+    # Each thruster is split into reverse and forwards, so there are double the elements in the objective
+    # Minimize the sum of the absolute value of each thrust
+    objective_mincurrent = np.concatenate((-np.ones(thruster_count), np.ones(thruster_count)))
 
-    torques_x_mincurrent = []
-    torques_y_mincurrent = []
-    torques_z_mincurrent = []
+    # All 6 degrees of freedom are constrained
+    thruster_constraints_mincurrent = np.row_stack((transformed_orientations, torques_transpose))
+    # Each thruster is split in two, the constraints are the same for each half of a thruster
+    left_of_equality_mincurrent = np.column_stack((thruster_constraints_mincurrent, thruster_constraints_mincurrent))
 
-    bounds_mincurrent = []
-
-    for i, orientation in enumerate(transformed_orientations, start=0):
-        # duplicate each thruster into a forward and a reverse half-thruster
-        objective_mincurrent.append(1)  # minimize the thrust of all thrusters weighted equally
-        objective_mincurrent.append(1)
-
-        thrusts_x_mincurrent.append(orientation[0])
-        thrusts_x_mincurrent.append(-orientation[0])  # duplicate, reversed thruster
-
-        thrusts_y_mincurrent.append(orientation[1])
-        thrusts_y_mincurrent.append(-orientation[1])
-
-        thrusts_z_mincurrent.append(orientation[2])
-        thrusts_z_mincurrent.append(-orientation[2])
-
-        torques_x_mincurrent.append(t_constraints[i][0])
-        torques_x_mincurrent.append(-t_constraints[i][0])
-
-        torques_y_mincurrent.append(t_constraints[i][1])
-        torques_y_mincurrent.append(-t_constraints[i][1])
-
-        torques_z_mincurrent.append(t_constraints[i][2])
-        torques_z_mincurrent.append(-t_constraints[i][2])
-
-        bounds_mincurrent.append((0, 3.71))
-        bounds_mincurrent.append((0, 2.90))
-
-    left_of_equality_mincurrent.append(thrusts_x_mincurrent)
-    left_of_equality_mincurrent.append(thrusts_y_mincurrent)
-    left_of_equality_mincurrent.append(thrusts_z_mincurrent)
-
-    left_of_equality_mincurrent.append(torques_x_mincurrent)
-    left_of_equality_mincurrent.append(torques_y_mincurrent)
-    left_of_equality_mincurrent.append(torques_z_mincurrent)
+    bounds_mincurrent = [(DEFAULT_MAX_THRUSTS[0], 0.0) for _ in range(thruster_count)] + \
+                        [(0.0, DEFAULT_MAX_THRUSTS[1]) for _ in range(thruster_count)]
 
     right_of_equality_mincurrent = [
         max_thrust,  # x thrust constrained to previous maximum
@@ -183,9 +122,9 @@ def get_max_thrust(transformed_orientations, t_constraints: np.ndarray, max_curr
     min_current_duplicated_array = min_current_result.x
 
     min_current_true_array = []
-    for i in range(0, len(min_current_duplicated_array) - 1, 2):
-        min_current_true_array.append(min_current_duplicated_array[i] - min_current_duplicated_array[
-            i + 1])  # combine half-thrusters into full thrusters
+    for i in range(0, thruster_count):
+        min_current_true_array.append(min_current_duplicated_array[i] + min_current_duplicated_array[
+            i + thruster_count])  # combine half-thrusters into full thrusters
 
     current_quadratic = [0] * 3
 
@@ -197,8 +136,8 @@ def get_max_thrust(transformed_orientations, t_constraints: np.ndarray, max_curr
             current_quadratic[2] += DEFAULT_FWD_CURRENT[2]  # c
         else:  # use the reverse thrust coefficients
             # TODO: Use customized thruster specs
-            current_quadratic[0] += DEFAULT_REV_CURRENT[0] * (-thrust) ** 2
-            current_quadratic[1] += DEFAULT_REV_CURRENT[1] * (-thrust)
+            current_quadratic[0] += DEFAULT_REV_CURRENT[0] * thrust ** 2
+            current_quadratic[1] += DEFAULT_REV_CURRENT[1] * thrust
             current_quadratic[2] += DEFAULT_REV_CURRENT[2]
 
     current_quadratic[2] -= max_current  # ax^2 + bx + c = I -> ax^2 + bx + (c-I) = 0
@@ -206,12 +145,7 @@ def get_max_thrust(transformed_orientations, t_constraints: np.ndarray, max_curr
     # solve quadratic, take the proper point, and clamp it to a maximum of 1.0
     thrust_multiplier = min(1., max(np.roots(current_quadratic)))
 
-    thrust_value = 0
-    for i in range(0, len(min_current_true_array)):
-        thrust_value += min_current_true_array[i] * transformed_orientations[i][
-            0]  # get total thrust in target direction
-
-    return thrust_value * thrust_multiplier
+    return max_thrust * thrust_multiplier
 
 
 #####################################
@@ -294,9 +228,7 @@ def main(thrusters, resolution: int, max_current: int):
     ]
 
     # Calculate the torque constrains which will apply to every iteration
-    torque_constraints = [thruster.torque() for thruster in thrusters]
-
-    # get_max_thrust(thrusters, np.array([1, 0, 0]), torque_constraints)
+    thruster_torques = np.array([thruster.torque() for thruster in thrusters])
 
     # I have no idea what np.meshgrid does
     u, v = np.mgrid[0:2 * np.pi:resolution * 1j, 0:np.pi: resolution / 2 * 1j]
@@ -315,7 +247,7 @@ def main(thrusters, resolution: int, max_current: int):
             x = np.cos(v[i][j])
             transformed_orientations = transform_orientations(thrusters, np.array([x, y, z]))
             # TODO: Need some way to carry over the customized thruster specs with the transformed orientations
-            rho = get_max_thrust(transformed_orientations, torque_constraints, max_current)
+            rho = get_max_thrust(transformed_orientations, thruster_torques, max_current)
             mesh_x[i][j] = x * rho
             mesh_y[i][j] = y * rho
             mesh_z[i][j] = z * rho
@@ -384,7 +316,7 @@ def main(thrusters, resolution: int, max_current: int):
     plt.show()
 
     # Print max yaw, pitch, and roll
-    calc_max_yaw_pitch_roll(thrusters, torque_constraints)
+    calc_max_yaw_pitch_roll(thrusters, thruster_torques)
 
 
 if __name__ == "__main__":  # Only run the main function the program is being run directly, not imported
