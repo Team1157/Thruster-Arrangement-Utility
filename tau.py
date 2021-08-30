@@ -5,14 +5,13 @@ import matplotlib
 from matplotlib import cm
 import matplotlib.pyplot as plt
 import typing as t
-import sys
-from pathlib import Path
-import time
+import click
 
 RESOLUTION = 100  # Runtime is O(n^2) with respect to resolution!
 MAX_THRUSTER_FORCE = [-2.9, 3.71]  # Lifted from the BlueRobotics public performance data (kgf)
-T_I_QUAD_COEF_FWD = [.741, 1.89, -.278]  # coefficiants of the quadratic approximating current draw as a function of thrust in
-# the forward direction in the form ax^2 + bx + c
+# coefficients of the quadratic approximating current draw as a function of thrust in the forward direction in the form:
+# ax^2 + bx + c
+T_I_QUAD_COEF_FWD = [.741, 1.89, -.278]
 T_I_QUAD_COEF_REV = [1.36, 2.04, -.231]  # reverse direction
 I_LIMIT = 22  # maximum allowable current
 
@@ -39,7 +38,6 @@ def transform_orientations(thrusters: t.List[Thruster3D], target_dir: np.ndarray
     Calculate the maximum force achievable in (exclusively) the given direction by the given set of constraints
     :param thrusters: A list of Thruster3D objects representing the available thrusters
     :param target_dir: A 3d vector in the target direction
-    :param t_constraints: Any additional constraints (such as torque constraints which are the same for every iteration)
     :return: The maximum thrust force in kgf
     """
     target_dir = target_dir / np.linalg.norm(target_dir)  # Make target_dir a unit vector
@@ -211,115 +209,10 @@ def get_max_thrust(transformed_orientations, t_constraints: np.ndarray):
     return thrust_value * thrust_multiplier
 
 
-in_file = ""
-
-if (len(sys.argv) >= 2):
-    in_file = sys.argv[1]
-
-if Path(in_file).is_file() == False:
-    in_file = "thrusters.json"
-    print("invalid file name, using \"thrusters.json\"")
-
-# Load the thruster data from a json file
-with open(in_file) as input_file:
-    input_transforms = json.loads(input_file.read())
-
-thrusters = []
-for transform in input_transforms:
-    thrusters.append(Thruster3D(transform['x'], transform['y'], transform['z'], transform['theta'], transform['phi']))
-
-# Calculate the torque constrains which will apply to every iteration
-torque_constraints = []
-
-for thruster in thrusters:
-    torque_constraints.append(thruster.torque())
-
-# get_max_thrust(thrusters, np.array([1, 0, 0]), torque_constraints)
-
-#  I have no idea what np.meshgrid does
-u, v = np.mgrid[0:2 * np.pi:RESOLUTION * 1j, 0:np.pi: RESOLUTION / 2 * 1j]
-np.empty(np.shape(u))
-mesh_x = np.empty(np.shape(u))
-mesh_y = np.empty(np.shape(u))
-mesh_z = np.empty(np.shape(u))
-
-# Iterate over each vertex and calculate the max thrust in that direction
-max_rho = 0
-for i in range(np.shape(u)[0]):
-    for j in range(np.shape(u)[1]):
-
-
-        z = np.cos(u[i][j]) * np.sin(v[i][j])
-        y = np.sin(u[i][j]) * np.sin(v[i][j])
-        x = np.cos(v[i][j])
-        transformed_orientations = transform_orientations(thrusters, np.array([x, y, z]))
-        rho = get_max_thrust(transformed_orientations, torque_constraints)
-        mesh_x[i][j] = x * rho
-        mesh_y[i][j] = y * rho
-        mesh_z[i][j] = z * rho
-        max_rho = max(max_rho, rho)
-max_rho = np.ceil(max_rho)
-
-color_index = np.sqrt(mesh_x**2 + mesh_y**2 + mesh_z**2,)
-
-norm = matplotlib.colors.Normalize(vmin = color_index.min(), vmax = color_index.max())
-
-color_index_modified = (color_index - color_index.min())/(color_index.max() - color_index.min())
-
-# Display the result
-matplotlib.use('TkAgg')
-fig = plt.figure()
-
-ax = fig.add_subplot(111, projection='3d', proj_type='ortho')
-ax.set_xlim((max_rho, -max_rho))  # Invert x axis
-ax.set_ylim((-max_rho, max_rho))
-ax.set_zlim((max_rho, -max_rho))  # Invert y axis
-ax.set_box_aspect((1, 1, 1))
-
-# Draw some "axes" so it's clear where (0, 0, 0)
-ax.plot((-max_rho, max_rho), (0, 0), (0, 0), c="black")
-ax.plot((0, 0), (-max_rho, max_rho), (0, 0), c="black")
-ax.plot((0, 0), (0, 0), (-max_rho, max_rho), c="black")
-
-thrusterloc_x = []
-thrusterloc_y = []
-thrusterloc_z = []
-
-thrusterdir_x = []
-thrusterdir_y = []
-thrusterdir_z = []
-
-for thruster in thrusters:
-    thrusterloc_x.append(2 * thruster.pos[0])
-    thrusterloc_y.append(2 * thruster.pos[1])
-    thrusterloc_z.append(2 * thruster.pos[2])
-
-    thrusterdir_x.append(2 * thruster.orientation[0])
-    thrusterdir_y.append(2 * thruster.orientation[1])
-    thrusterdir_z.append(2 * thruster.orientation[2])
-
-ax.quiver(thrusterloc_x, thrusterloc_y, thrusterloc_z, thrusterdir_x, thrusterdir_y, thrusterdir_z, color="black")
-
-ax.plot_surface(mesh_x, mesh_y, mesh_z, alpha=0.6, facecolors=cm.jet(color_index_modified), edgecolors='w', linewidth=0)
-ax.view_init(elev=30, azim=-150)
-
-m = cm.ScalarMappable(cmap=plt.cm.jet, norm=norm)
-m.set_array([])
-
-color_range = color_index.max() - color_index.min()
-plt.colorbar(m, ticks=[color_index.min(), color_index.min() + color_range/4, color_index.min() + color_range/2, color_index.min() + 3*color_range/4,color_index.max()])
-
-ax.set_xlabel('X (Surge)')
-ax.set_ylabel('Y (Sway)')
-ax.set_zlabel('Z (Heave)')
-
-plt.show()
-
-
 #####################################
 # Yaw, pitch, roll code
 #####################################
-def calc_max_yaw_pitch_roll():
+def calc_max_yaw_pitch_roll(thrusters, torque_constraints):
     torque_x = []
     torque_y = []
     torque_z = []
@@ -342,11 +235,9 @@ def calc_max_yaw_pitch_roll():
         torques = [torque_x, torque_y, torque_z]
         bounds.append(MAX_THRUSTER_FORCE)
 
-    for i in range(len(torques)):
+    for i in range(len(torques)): #?????
         torques = [torque_x, torque_y, torque_z]
-        objective = []
-
-        objective.append(torques[i])
+        objective = [torques[i]]
 
         torques.pop(i)
         constraint1 = torques[0]
@@ -360,4 +251,117 @@ def calc_max_yaw_pitch_roll():
         print(res)
 
 
-calc_max_yaw_pitch_roll()
+# The main entry point of the program
+# All the Click decorators define various options that can be passed in on the command line
+@click.command()
+@click.option("--transforms", "-t", default="thrusters.json", help="file containing thruster transforms")
+# TODO: Implement options to replace magic numbers
+# @click.option("-r", "--resolution", default=100, help="resolution of the thrust calculation")
+# @click.option(
+#     "-f", "--max-force",
+#     nargs=2, default=[-2.9, 3.71],
+#     help="the maximum thrust forward/backward of the thrusters in kgf"
+# )
+def tau(transforms):
+    """
+    tau - the thruster arrangement utility
+    """
+
+    # Read the thruster transforms input JSON file
+    # Wrap this in a try-except FileNotFoundError block to print a nicer error message
+    with open(transforms) as f:  # `with` blocks allow you to open files safely without risking corrupting them on crash
+        input_transforms = json.load(f)
+
+    # Convert loaded JSON data into Thruster3D objects
+    thrusters = [
+        Thruster3D(transform['x'], transform['y'], transform['z'], transform['theta'], transform['phi'])
+        for transform in input_transforms
+    ]
+
+    # Calculate the torque constrains which will apply to every iteration
+    torque_constraints = [thruster.torque() for thruster in thrusters]
+
+    # get_max_thrust(thrusters, np.array([1, 0, 0]), torque_constraints)
+
+    #  I have no idea what np.meshgrid does
+    u, v = np.mgrid[0:2 * np.pi:RESOLUTION * 1j, 0:np.pi: RESOLUTION / 2 * 1j]
+    np.empty(np.shape(u))
+    mesh_x = np.empty(np.shape(u))
+    mesh_y = np.empty(np.shape(u))
+    mesh_z = np.empty(np.shape(u))
+
+    # Iterate over each vertex and calculate the max thrust in that direction
+    max_rho = 0
+    for i in range(np.shape(u)[0]):
+        for j in range(np.shape(u)[1]):
+            z = np.cos(u[i][j]) * np.sin(v[i][j])
+            y = np.sin(u[i][j]) * np.sin(v[i][j])
+            x = np.cos(v[i][j])
+            transformed_orientations = transform_orientations(thrusters, np.array([x, y, z]))
+            rho = get_max_thrust(transformed_orientations, torque_constraints)
+            mesh_x[i][j] = x * rho
+            mesh_y[i][j] = y * rho
+            mesh_z[i][j] = z * rho
+            max_rho = max(max_rho, rho)
+    max_rho = np.ceil(max_rho)
+
+    color_index = np.sqrt(mesh_x**2 + mesh_y**2 + mesh_z**2,)
+
+    norm = matplotlib.colors.Normalize(vmin = color_index.min(), vmax = color_index.max())
+
+    # Start plotting results
+    matplotlib.use('TkAgg')
+    fig = plt.figure()
+
+    # Set up plot: 3d orthographic plot with ROV axis orientation
+    ax = fig.add_subplot(111, projection='3d', proj_type='ortho')
+
+    ax.set_box_aspect((1, 1, 1))
+    ax.view_init(elev=30, azim=-150)
+
+    ax.set_xlim((max_rho, -max_rho))  # Invert x axis
+    ax.set_ylim((-max_rho, max_rho))
+    ax.set_zlim((max_rho, -max_rho))  # Invert y axis
+
+    ax.set_xlabel('X (Surge)')
+    ax.set_ylabel('Y (Sway)')
+    ax.set_zlabel('Z (Heave)')
+
+    # Draw some "axes" so it's clear where (0, 0, 0) is
+    ax.plot((-max_rho, max_rho), (0, 0), (0, 0), c="black")
+    ax.plot((0, 0), (-max_rho, max_rho), (0, 0), c="black")
+    ax.plot((0, 0), (0, 0), (-max_rho, max_rho), c="black")
+
+    # Plot the locations and orientations of the thrusters
+    # NOTE: Consider merging this all into the function call below to avoid creating all these unwieldy variable names?
+    thrusterloc_x = [2 * thruster.pos[0] for thruster in thrusters]
+    thrusterloc_y = [2 * thruster.pos[1] for thruster in thrusters]
+    thrusterloc_z = [2 * thruster.pos[2] for thruster in thrusters]
+
+    thrusterdir_x = [2 * thruster.orientation[0] for thruster in thrusters]
+    thrusterdir_y = [2 * thruster.orientation[1] for thruster in thrusters]
+    thrusterdir_z = [2 * thruster.orientation[2] for thruster in thrusters]
+
+    ax.quiver(thrusterloc_x, thrusterloc_y, thrusterloc_z, thrusterdir_x, thrusterdir_y, thrusterdir_z, color="black")
+
+    # Plot the zero-torque maximum thrust in each direction
+    color_index_modified = (color_index - color_index.min()) / (color_index.max() - color_index.min())
+    ax.plot_surface(
+        mesh_x, mesh_y, mesh_z,
+        alpha=0.6, facecolors=cm.jet(color_index_modified), edgecolors='w', linewidth=0
+    )
+
+    # Create a legend mapping the colors of the thrust plot to thrust values
+    color_range = color_index.max() - color_index.min()
+    m = cm.ScalarMappable(cmap=plt.cm.jet, norm=norm)
+    plt.colorbar(m, ticks=[color_index.min(), color_index.min() + color_range/4, color_index.min() + color_range/2, color_index.min() + 3*color_range/4,color_index.max()])
+
+    # Show plot
+    plt.show()
+
+    # Print max yaw, pitch, and roll
+    calc_max_yaw_pitch_roll(thrusters, torque_constraints)
+
+
+if __name__ == "__main__":  # Only run this if the program is being run directly, not imported
+    tau()  # Click autofills the parameters to this based on the program's command-line arguments
