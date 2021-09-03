@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import linprog
+import qpsolvers
 import json
 import matplotlib
 from matplotlib import cm
@@ -13,7 +14,7 @@ DEFAULT_MAX_THRUSTS = [-2.9, 3.71]  # Lifted from the BlueRobotics public perfor
 # ax^2 + bx + c
 # Both regressions are in terms of the same variable, thrust, which is negative in the reverse direction
 DEFAULT_FWD_CURRENT = [.741, 1.89, -.278]
-DEFAULT_REV_CURRENT = [1.36, -2.04, -.231]  # reverse direction
+DEFAULT_REV_CURRENT = [1.36, -2.04, -.231]
 DEFAULT_MAX_CURRENT = 22
 
 
@@ -72,6 +73,8 @@ def rotate_to_vector(vectors: np.ndarray, target_dir: np.ndarray) -> np.ndarray:
 
 def get_max_effort(thrusters: t.List[Thruster3D], objective: np.ndarray, constraints: np.ndarray,
                    max_current: int):
+    thruster_count = len(thrusters)
+
     # First Simplex run. Find the maximum thrust in the desired direction
     bounds = [thruster.max_thrusts for thruster in thrusters]
 
@@ -80,44 +83,59 @@ def get_max_effort(thrusters: t.List[Thruster3D], objective: np.ndarray, constra
     max_effort_result = linprog(c=-objective, A_ub=None, b_ub=None, A_eq=constraints, b_eq=right_of_equality,
                                 bounds=bounds, method="highs")
 
-    max_effort = -.999 * max_effort_result.fun  # some sort of precision/numerical error makes this bullshit necessary
+    max_effort = -.99999 * max_effort_result.fun  # some sort of precision/numerical error makes this bullshit necessary
 
     if max_effort < 0.00000001:
         # The thruster layout is incapable of producing effort in the target direction
         return 0.0
 
-    # Second Simplex run. Find the minimum current that produces the same effort as the first result
-
+    # Find the minimum current that produces the same effort as the first result
     # Each thruster is split into reverse and forwards, so there are double the elements in the objective
-    # Minimize the sum of the absolute value of each effort
-    objective_mincurrent = np.concatenate((-np.ones(len(thrusters)), np.ones(len(thrusters))))
+
+    # The objective function (total current as a function of thruster forces) is quadratic
+    x_squared_coefficients = np.zeros((thruster_count * 2, thruster_count * 2))  # Holds the coefficients of x^2
+    x_coefficients = np.empty(thruster_count * 2)  # Holds the coefficients of x
+
+    # The reverse half thrusters are indexed 0 to numb_thrusters - 1
+    # Forward half thrusters are indexed numb_thrusters to 2 * numb_thrusters - 1
+    for i, thruster in enumerate(thrusters):
+        x_squared_coefficients[i][i] = thruster.rev_current[0]
+        x_squared_coefficients[i + thruster_count][i + thruster_count] = thruster.fwd_current[0]
+
+        x_coefficients[i] = thruster.rev_current[1]
+        x_coefficients[i+thruster_count] = thruster.fwd_current[1]
 
     # All 6 degrees of freedom are constrained
     thruster_constraints_mincurrent = np.row_stack((objective, constraints))
     # Each thruster is split in two, the constraints are the same for each half of a thruster
     left_of_equality_mincurrent = np.column_stack((thruster_constraints_mincurrent, thruster_constraints_mincurrent))
 
-    bounds_mincurrent = [(DEFAULT_MAX_THRUSTS[0], 0.0) for _ in range(len(thrusters))] + \
-                        [(0.0, DEFAULT_MAX_THRUSTS[1]) for _ in range(len(thrusters))]
+    lower_bounds = np.array([thruster.max_thrusts[0] for thruster in thrusters] + [0.0 for _ in thrusters])
+    upper_bounds = np.array([0.0 for _ in thrusters] + [thruster.max_thrusts[1] for thruster in thrusters])
 
-    right_of_equality_mincurrent = [
+    right_of_equality_mincurrent = np.array([
         max_effort,  # x thrust constrained to previous maximum
         0,  # y thrust
         0,  # z thrust
         0,  # x torque
         0,  # y torque
         0,  # z torque
-    ]
+    ])
 
-    min_current_result = linprog(c=objective_mincurrent, A_ub=None, b_ub=None, A_eq=left_of_equality_mincurrent,
-                                 b_eq=right_of_equality_mincurrent, bounds=bounds_mincurrent, method="highs")
+    min_current_result = qpsolvers.solve_qp(
+        P=2 * x_squared_coefficients,  # The solver minimizes 1/2 * Px^2 + qx, we need to cancel out the 1/2
+        q=x_coefficients,
+        A=left_of_equality_mincurrent,
+        b=right_of_equality_mincurrent,
+        lb=lower_bounds,
+        ub=upper_bounds,
+        solver="quadprog"
+    )
 
-    min_current_duplicated_array = min_current_result.x
-
+    # combine half-thrusters into full thrusters
     min_current_true_array = []
-    for i in range(0, len(thrusters)):
-        min_current_true_array.append(min_current_duplicated_array[i] + min_current_duplicated_array[
-            i + len(thrusters)])  # combine half-thrusters into full thrusters
+    for i in range(thruster_count):
+        min_current_true_array.append(min_current_result[i] + min_current_result[i + thruster_count])
 
     current_quadratic = [0] * 3
 
@@ -234,11 +252,13 @@ def main(thrusters, resolution: int, max_current: int):
             z = np.cos(u[i][j]) * np.sin(v[i][j])
             y = np.sin(u[i][j]) * np.sin(v[i][j])
             x = np.cos(v[i][j])
+
             transformed_orientations = rotate_to_vector(thruster_orientations, np.array([x, y, z]))
             transformed_torques = rotate_to_vector(thruster_torques, np.array([x, y, z]))
 
             thrust = get_max_effort(thrusters, transformed_orientations[0],
                                     np.row_stack((transformed_orientations[1:], thruster_torques)), max_current)
+
             torque = get_max_effort(thrusters, transformed_torques[0],
                                     np.row_stack((transformed_torques[1:], thruster_orientations)), max_current)
 
@@ -311,7 +331,7 @@ def main(thrusters, resolution: int, max_current: int):
         alpha=0.6, facecolors=cm.jet(torque_color_index_modified), edgecolors='w', linewidth=0
     )
 
-    # Create a legend mapping the colors of the thrust plot to thrust values
+    # Create a legend mapping the colors of the each plot to its values
     add_colorbar(plt, ax_thrust, thrust_color_index)
     add_colorbar(plt, ax_torque, torque_color_index)
 
