@@ -1,5 +1,4 @@
 numpy
 scipy
-qpsolvers
 matplotlib
 click  # For command-line argument processing

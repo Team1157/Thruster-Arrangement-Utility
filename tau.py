@@ -1,11 +1,8 @@
 import numpy as np
-import scipy
 from scipy.optimize import linprog
-import qpsolvers
 import json
 import matplotlib
 from matplotlib import cm
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
 import matplotlib.pyplot as plt
 import typing as t
 import click
@@ -16,7 +13,7 @@ DEFAULT_MAX_THRUSTS = [-2.9, 3.71]  # Lifted from the BlueRobotics public perfor
 # ax^2 + bx + c
 # Both regressions are in terms of the same variable, thrust, which is negative in the reverse direction
 DEFAULT_FWD_CURRENT = [.741, 1.89, -.278]
-DEFAULT_REV_CURRENT = [1.36, -2.04, -.231]
+DEFAULT_REV_CURRENT = [1.36, -2.04, -.231]  # reverse direction
 DEFAULT_MAX_CURRENT = 22
 
 
@@ -38,60 +35,6 @@ class Thruster3D:
 
     def torque(self):
         return np.cross(self.pos, self.orientation)
-
-
-def get_column_span(mat: np.ndarray) -> np.ndarray:
-    """
-    Find the column span of a matrix (remove columns which to not increase the number of dimensions the columns span)
-
-    @param mat:The input matrix
-    @return: A full rank matrix constructed from the column vectors of the input
-    """
-    upper_triangular = scipy.linalg.lu(mat)[2]
-
-    output_vectors = []
-    for row in upper_triangular:
-        for i, value in enumerate(row):
-            if abs(value) > 1e-10:
-                output_vectors.append(mat[..., i])
-                break
-
-    return np.array(output_vectors).transpose()
-
-
-# rref function by joni on Stack Overflow:
-# https://stackoverflow.com/a/66412719
-# This function is licenced under CC BY-SA 4.0
-# https://creativecommons.org/licenses/by-sa/4.0/
-def rref(A, tol=1.0e-12):
-    m, n = A.shape
-    i, j = 0, 0
-    jb = []
-
-    while i < m and j < n:
-        # Find value and index of largest element in the remainder of column j
-        k = np.argmax(np.abs(A[i:m, j])) + i
-        p = np.abs(A[k, j])
-        if p <= tol:
-            # The column is negligible, zero it out
-            A[i:m, j] = 0.0
-            j += 1
-        else:
-            # Remember the column index
-            jb.append(j)
-            if i != k:
-                # Swap the i-th and k-th rows
-                A[[i, k], j:n] = A[[k, i], j:n]
-            # Divide the pivot row i by the pivot element A[i, j]
-            A[i, j:n] = A[i, j:n] / A[i, j]
-            # Subtract multiples of the pivot row from all the other rows
-            for k in range(m):
-                if k != i:
-                    A[k, j:n] -= A[k, j] * A[i, j:n]
-            i += 1
-            j += 1
-    # Finished
-    return A, jb
 
 
 def rotate_to_vector(vectors: np.ndarray, target_dir: np.ndarray) -> np.ndarray:
@@ -127,67 +70,54 @@ def rotate_to_vector(vectors: np.ndarray, target_dir: np.ndarray) -> np.ndarray:
     return transformed_orientations
 
 
-def get_max_effort(thrusters: t.List[Thruster3D], objective: np.ndarray, constraints: t.Optional[np.ndarray],
-                   max_current: float):
-    thruster_count = len(thrusters)
-
+def get_max_effort(thrusters: t.List[Thruster3D], objective: np.ndarray, constraints: np.ndarray,
+                   max_current: int):
     # First Simplex run. Find the maximum thrust in the desired direction
     bounds = [thruster.max_thrusts for thruster in thrusters]
 
-    right_of_equality = np.zeros(constraints.shape[0]) if constraints is not None else None  # All constraints must be 0
+    right_of_equality = np.zeros(5)  # There are 5 constraints that must all be 0
 
     max_effort_result = linprog(c=-objective, A_ub=None, b_ub=None, A_eq=constraints, b_eq=right_of_equality,
                                 bounds=bounds, method="highs")
 
-    max_effort = -.99999 * max_effort_result.fun  # some sort of precision/numerical error makes this bullshit necessary
+    max_effort = -.999 * max_effort_result.fun  # some sort of precision/numerical error makes this bullshit necessary
 
     if max_effort < 0.00000001:
         # The thruster layout is incapable of producing effort in the target direction
         return 0.0
 
-    # Find the minimum current that produces the same effort as the first result
+    # Second Simplex run. Find the minimum current that produces the same effort as the first result
+
     # Each thruster is split into reverse and forwards, so there are double the elements in the objective
-
-    # The objective function (total current as a function of thruster forces) is quadratic
-    x_squared_coefficients = np.zeros((thruster_count * 2, thruster_count * 2))  # Holds the coefficients of x^2
-    x_coefficients = np.empty(thruster_count * 2)  # Holds the coefficients of x
-
-    # The reverse half thrusters are indexed 0 to numb_thrusters - 1
-    # Forward half thrusters are indexed numb_thrusters to 2 * numb_thrusters - 1
-    for i, thruster in enumerate(thrusters):
-        x_squared_coefficients[i][i] = thruster.rev_current[0]
-        x_squared_coefficients[i + thruster_count][i + thruster_count] = thruster.fwd_current[0]
-
-        x_coefficients[i] = thruster.rev_current[1]
-        x_coefficients[i+thruster_count] = thruster.fwd_current[1]
+    # Minimize the sum of the absolute value of each effort
+    objective_mincurrent = np.concatenate((-np.ones(len(thrusters)), np.ones(len(thrusters))))
 
     # All 6 degrees of freedom are constrained
-    thruster_constraints_mincurrent = np.row_stack((objective, constraints)) if constraints is not None else \
-        np.array(objective)
+    thruster_constraints_mincurrent = np.row_stack((objective, constraints))
     # Each thruster is split in two, the constraints are the same for each half of a thruster
     left_of_equality_mincurrent = np.column_stack((thruster_constraints_mincurrent, thruster_constraints_mincurrent))
 
-    lower_bounds = np.array([thruster.max_thrusts[0] for thruster in thrusters] + [0.0 for _ in thrusters])
-    upper_bounds = np.array([0.0 for _ in thrusters] + [thruster.max_thrusts[1] for thruster in thrusters])
+    bounds_mincurrent = [(DEFAULT_MAX_THRUSTS[0], 0.0) for _ in range(len(thrusters))] + \
+                        [(0.0, DEFAULT_MAX_THRUSTS[1]) for _ in range(len(thrusters))]
 
-    # Extra constraint for the original objective
-    right_of_equality_mincurrent = np.zeros((0 if constraints is None else constraints.shape[0]) + 1)
-    right_of_equality_mincurrent[0] = max_effort
+    right_of_equality_mincurrent = [
+        max_effort,  # x thrust constrained to previous maximum
+        0,  # y thrust
+        0,  # z thrust
+        0,  # x torque
+        0,  # y torque
+        0,  # z torque
+    ]
 
-    min_current_result = qpsolvers.solve_qp(
-        P=2 * x_squared_coefficients,  # The solver minimizes 1/2 * Px^2 + qx, we need to cancel out the 1/2
-        q=x_coefficients,
-        A=left_of_equality_mincurrent,
-        b=right_of_equality_mincurrent,
-        lb=lower_bounds,
-        ub=upper_bounds,
-        solver="quadprog"
-    )
+    min_current_result = linprog(c=objective_mincurrent, A_ub=None, b_ub=None, A_eq=left_of_equality_mincurrent,
+                                 b_eq=right_of_equality_mincurrent, bounds=bounds_mincurrent, method="highs")
 
-    # combine half-thrusters into full thrusters
+    min_current_duplicated_array = min_current_result.x
+
     min_current_true_array = []
-    for i in range(thruster_count):
-        min_current_true_array.append(min_current_result[i] + min_current_result[i + thruster_count])
+    for i in range(0, len(thrusters)):
+        min_current_true_array.append(min_current_duplicated_array[i] + min_current_duplicated_array[
+            i + len(thrusters)])  # combine half-thrusters into full thrusters
 
     current_quadratic = [0] * 3
 
@@ -231,181 +161,17 @@ def setup_subplot(subplot, thrusters, axes_bounds):
                    color="black")
 
 
-def add_colorbar(plot, ax, color_index, norm=None, cmap=plt.cm.turbo):
-    norm = norm or matplotlib.colors.Normalize(vmin=color_index.min(), vmax=color_index.max())
-    color_range = norm.vmax - norm.vmin
-
-    m = cm.ScalarMappable(cmap=cmap, norm=norm)
+def add_colorbar(plot, ax, color_index):
+    color_range = color_index.max() - color_index.min()
+    norm = matplotlib.colors.Normalize(vmin=color_index.min(), vmax=color_index.max())
+    m = cm.ScalarMappable(cmap=plt.cm.jet, norm=norm)
     plot.colorbar(m, ticks=[
-        norm.vmin,
-        norm.vmin + color_range * 1 / 4,
-        norm.vmin + color_range * 2 / 4,
-        norm.vmin + color_range * 3 / 4,
-        norm.vmax
+        color_index.min(),
+        color_index.min() + color_range * 1 / 4,
+        color_index.min() + color_range * 2 / 4,
+        color_index.min() + color_range * 3 / 4,
+        color_index.max()
     ], ax=ax, fraction=0.1, shrink=0.5)
-
-
-def plot_effort_surface(plot, ax, thrusters: t.List[Thruster3D], effort_vectors: np.ndarray,
-                        extra_constraints: np.ndarray, resolution: int, max_current: float):
-    # Determine whether the the set of possible efforts is a solid, surface, or line
-
-    # Solve the constraints matrix
-    constraints_rref = rref(np.copy(extra_constraints), tol=1e-10)[0]
-
-    # Find the pivot columns
-    pivot_columns = []
-    for row in constraints_rref:
-        for j, val in enumerate(row):
-            if abs(val) > 1e-10:
-                pivot_columns.append(j)
-                break
-
-    # Find the vectors that span the solution set to extra_constraints * x = 0
-    thruster_value_bases = []
-    for i in range(constraints_rref.shape[1]):
-        if i not in pivot_columns:
-            new_basis = np.empty(constraints_rref.shape[1])
-            for j in range(constraints_rref.shape[1]):
-                if j in pivot_columns:
-                    new_basis[j] = -constraints_rref[pivot_columns.index(j)][i]
-                else:
-                    new_basis[j] = int(i == j)
-            thruster_value_bases.append(new_basis)
-
-    thruster_bases_matrix = np.matrix.round(np.array(thruster_value_bases).transpose(), decimals=10)
-
-    if thruster_bases_matrix.shape[0] == 0:
-        # The thrusters cannot produce effort in any direction under the constraints
-        return
-
-    # Find the span of the effort vectors under the constraints
-    effort_bases_matrix = effort_vectors.dot(thruster_bases_matrix)
-    effort_span = np.matrix.round(get_column_span(effort_bases_matrix), decimals=10)
-
-    if effort_span.shape[1] == 3:
-        # The output space is a 3d solid
-        # I have no idea what np.meshgrid does
-        u, v = np.mgrid[0:2 * np.pi:resolution * 1j, 0:np.pi: resolution / 2 * 1j]
-        mesh_x = np.empty(np.shape(u))
-        mesh_y = np.empty(np.shape(u))
-        mesh_z = np.empty(np.shape(u))
-        color_index = np.empty(np.shape(u))
-
-        # Iterate over each vertex and calculate the max effort in that direction
-        max_effort = 0
-        for i in range(np.shape(u)[0]):
-            for j in range(np.shape(u)[1]):
-                z = np.cos(u[i][j]) * np.sin(v[i][j])
-                y = np.sin(u[i][j]) * np.sin(v[i][j])
-                x = np.cos(v[i][j])
-
-                transformed_effort_vectors = rotate_to_vector(effort_vectors, np.array([x, y, z]))
-
-                effort = get_max_effort(thrusters, transformed_effort_vectors[0],
-                                        np.row_stack((transformed_effort_vectors[1:], extra_constraints)), max_current)
-
-                mesh_x[i][j] = x * effort
-                mesh_y[i][j] = y * effort
-                mesh_z[i][j] = z * effort
-                color_index[i][j] = effort
-
-                max_effort = max(max_effort, effort)
-
-        # Adjust each color so that the min and max values correspond to the min and max colors
-        color_index_modified = (color_index - color_index.min()) / (color_index.max() - color_index.min())
-
-        setup_subplot(ax, thrusters, np.ceil(max_effort))
-
-        ax.plot_surface(
-            mesh_x, mesh_y, mesh_z, alpha=0.75, facecolors=cm.turbo(color_index_modified), edgecolors='w', linewidth=0
-        )
-
-        # Create a legend mapping the colors of the each plot to its values
-        add_colorbar(plot, ax, color_index)
-
-    elif effort_span.shape[1] == 2:
-        # The output space is confined to a plane
-
-        # Switch to equivalent perpendicular bases
-        normal = np.cross(effort_span[..., 0], effort_span[..., 1])
-        if normal[1] != 0 or normal[2] != 0:
-            first_basis = np.cross(normal, np.array([1, 0, 0]))
-        else:
-            first_basis = np.cross(normal, np.array([0, 1, 0]))
-        effort_span[..., 0] = first_basis / np.linalg.norm(first_basis)  # Convert to unit vector
-
-        second_basis = np.cross(normal, first_basis)
-        effort_span[..., 1] = second_basis / np.linalg.norm(second_basis)
-
-        effort_inv_transform = np.linalg.pinv(effort_span)
-        transformed_efforts = effort_inv_transform.dot(effort_vectors)
-
-        theta_space = np.linspace(0, np.pi * 2, num=resolution * 2)
-        curve = np.empty((2, theta_space.size))
-        color_index = np.empty(theta_space.size)
-
-        max_effort = 0
-        for i, theta in enumerate(theta_space):
-            u = np.cos(theta)
-            v = np.sin(theta)
-
-            rotation_mat = np.array([[u, -v], [v, u]])
-            rotated_efforts = rotation_mat.dot(transformed_efforts)
-
-            effort = get_max_effort(thrusters, rotated_efforts[0], np.array([rotated_efforts[1]]), max_current)
-
-            curve[0, i] = u * effort
-            curve[1, i] = v * effort
-            color_index[i] = effort
-
-            max_effort = max(max_effort, effort)
-
-        # Transform the 2d output space back into 3d
-        curve_3d = effort_span.dot(curve)
-
-        setup_subplot(ax, thrusters, np.ceil(max_effort))
-
-        points = curve_3d.T.reshape(-1, 1, 3)
-        segments = np.concatenate([points[:-1], points[1:]], axis=1)
-
-        lc = Line3DCollection(segments, cmap='turbo', linewidths=2.5)
-        lc.set_array(color_index)
-
-        ax.add_collection(lc)
-
-        add_colorbar(plt, ax, color_index)
-
-    elif effort_span.shape[1] == 1:
-        # The output space is confined to a line
-        effort_span[..., 0] = effort_span[..., 0] / np.linalg.norm(effort_span[..., 0])  # Normalize the basis vector
-
-        effort_inv_transform = np.linalg.pinv(effort_span)
-        transformed_efforts = effort_inv_transform.dot(effort_vectors)
-
-        pos_effort = get_max_effort(thrusters, transformed_efforts, None, max_current)
-        neg_effort = get_max_effort(thrusters, -transformed_efforts, None, max_current)
-
-        efforts = np.zeros((3, 2))
-        efforts[..., 0] = effort_span.transpose() * pos_effort
-        efforts[..., 1] = effort_span.transpose() * -neg_effort
-
-        setup_subplot(ax, thrusters, max(np.linalg.norm(efforts[..., 0]), np.linalg.norm(efforts[..., 1])))
-
-        average_effort = (pos_effort + neg_effort) / 2
-        norm = matplotlib.colors.Normalize(average_effort / 2, average_effort * 3 / 2)
-
-        custom_cmap = matplotlib.colors.LinearSegmentedColormap.from_list("rbu_cmap", ["blue", "gray", "red"])
-
-        a1 = ax.quiver(0, 0, 0, efforts[0][0], efforts[1][0], efforts[2][0], cmap=custom_cmap, norm=norm)
-        a1.set_array(np.array([pos_effort]))
-
-        a2 = ax.quiver(0, 0, 0, efforts[0][1], efforts[1][1], efforts[2][1], cmap=custom_cmap, norm=norm)
-        a2.set_array(np.array([neg_effort]))
-
-        add_colorbar(plt, ax, None, norm=norm, cmap=custom_cmap)
-
-    else:
-        raise ValueError("The span of the effort vectors had an unexpected dimension")
 
 
 # The main entry point of the program
@@ -417,7 +183,7 @@ def plot_effort_surface(plot, ax, thrusters: t.List[Thruster3D], effort_vectors:
               help="resolution of the thrust calculation, runtime is O(n^2) with respect to this!"
               )
 @click.option("--max-current", "-c", default=DEFAULT_MAX_CURRENT, help="maximum thruster current draw in amps")
-def main(thrusters, resolution: int, max_current: float):
+def main(thrusters, resolution: int, max_current: int):
     # This doc comment becomes the description text for the --help menu
     """
     tau - the thruster arrangement utility
@@ -448,28 +214,66 @@ def main(thrusters, resolution: int, max_current: float):
     thruster_orientations = np.array([thruster.orientation for thruster in thrusters]).transpose()
     thruster_torques = np.array([thruster.torque() for thruster in thrusters]).transpose()
 
-    # Set up matplotlib window
+    # I have no idea what np.meshgrid does
+    u, v = np.mgrid[0:2 * np.pi:resolution * 1j, 0:np.pi: resolution / 2 * 1j]
+    thrust_mesh_x = np.empty(np.shape(u))
+    thrust_mesh_y = np.empty(np.shape(u))
+    thrust_mesh_z = np.empty(np.shape(u))
+    thrust_color_index = np.empty(np.shape(u))
+    torque_mesh_x = np.empty(np.shape(u))
+    torque_mesh_y = np.empty(np.shape(u))
+    torque_mesh_z = np.empty(np.shape(u))
+    torque_color_index = np.empty(np.shape(u))
+
+    # Iterate over each vertex and calculate the max thrust in that direction
+    # Note: Should probably be its own function, then it can be optimized more (i.e. Numba)
+    max_thrust = 0
+    max_torque = 0
+    for i in range(np.shape(u)[0]):
+        for j in range(np.shape(u)[1]):
+            z = np.cos(u[i][j]) * np.sin(v[i][j])
+            y = np.sin(u[i][j]) * np.sin(v[i][j])
+            x = np.cos(v[i][j])
+            transformed_orientations = rotate_to_vector(thruster_orientations, np.array([x, y, z]))
+            transformed_torques = rotate_to_vector(thruster_torques, np.array([x, y, z]))
+
+            thrust = get_max_effort(thrusters, transformed_orientations[0],
+                                    np.row_stack((transformed_orientations[1:], thruster_torques)), max_current)
+            torque = get_max_effort(thrusters, transformed_torques[0],
+                                    np.row_stack((transformed_torques[1:], thruster_orientations)), max_current)
+
+            thrust_mesh_x[i][j] = x * thrust
+            thrust_mesh_y[i][j] = y * thrust
+            thrust_mesh_z[i][j] = z * thrust
+            thrust_color_index[i][j] = thrust
+
+            torque_mesh_x[i][j] = x * torque
+            torque_mesh_y[i][j] = y * torque
+            torque_mesh_z[i][j] = z * torque
+            torque_color_index[i][j] = torque
+
+            max_thrust = max(max_thrust, thrust)
+            max_torque = max(max_torque, torque)
+
+    # Start plotting results
     matplotlib.use('TkAgg')
-    fig = plt.figure(num="TAU", figsize=(12, 6))  # Window size, in inches for some reason
+    fig = plt.figure(figsize=(12, 6))  # Window size, in inches for some reason
 
     # Set up plot: 3d orthographic plot with ROV axis orientation
     ax_thrust = fig.add_subplot(121, projection='3d', proj_type='ortho')
     ax_torque = fig.add_subplot(122, projection='3d', proj_type='ortho')
 
-    # Plot thrust surface
-    plot_effort_surface(plt, ax_thrust, thrusters, thruster_orientations, thruster_torques, resolution, max_current)
-    # Plot torque surface
-    plot_effort_surface(plt, ax_torque, thrusters, thruster_torques, thruster_orientations, resolution, max_current)
-
-    ax_thrust.title.set_text('Thrust')
+    setup_subplot(ax_thrust, thrusters, np.ceil(max_thrust))
     ax_thrust.set_xlabel('X (Surge)')
     ax_thrust.set_ylabel('Y (Sway)')
     ax_thrust.set_zlabel('Z (Heave)')
+    ax_thrust.title.set_text('Thrust')
 
-    ax_torque.title.set_text('Torque')
+    setup_subplot(ax_torque, thrusters, np.ceil(max_torque))
     ax_torque.set_xlabel('X (Roll)')
     ax_torque.set_ylabel('Y (Pitch)')
     ax_torque.set_zlabel('Z (Yaw)')
+    ax_torque.title.set_text('Torque')
 
     # Synchronize the rotation and zoom of both subplots
     def on_plot_move(event):
@@ -490,6 +294,26 @@ def main(thrusters, resolution: int, max_current: float):
         fig.canvas.draw_idle()
 
     fig.canvas.mpl_connect('motion_notify_event', on_plot_move)
+
+    # Adjust each color so that the min and max values correspond to the min and max colors
+    thrust_color_index_modified = (thrust_color_index - thrust_color_index.min()) / \
+                                  (thrust_color_index.max() - thrust_color_index.min())
+    torque_color_index_modified = (torque_color_index - torque_color_index.min()) / \
+                                  (torque_color_index.max() - torque_color_index.min())
+
+    # Plot the surfaces on their respective subplots
+    ax_thrust.plot_surface(
+        thrust_mesh_x, thrust_mesh_y, thrust_mesh_z,
+        alpha=0.6, facecolors=cm.jet(thrust_color_index_modified), edgecolors='w', linewidth=0
+    )
+    ax_torque.plot_surface(
+        torque_mesh_x, torque_mesh_y, torque_mesh_z,
+        alpha=0.6, facecolors=cm.jet(torque_color_index_modified), edgecolors='w', linewidth=0
+    )
+
+    # Create a legend mapping the colors of the thrust plot to thrust values
+    add_colorbar(plt, ax_thrust, thrust_color_index)
+    add_colorbar(plt, ax_torque, torque_color_index)
 
     # Show plot
     plt.show()

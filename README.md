@@ -11,3 +11,5 @@ TODO:
  - add a GUI
  - make the output surface less jagged
  - add a way to show individual thruster values at a given point
+ - make sure the thrusters are sharing load equally
+ - accurately show surfaces when the vehicle has fewer than 6 dof
