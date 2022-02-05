@@ -161,7 +161,7 @@ def get_max_effort(thrusters: t.List[Thruster3D], objective: np.ndarray, constra
         x_squared_coefficients[i + thruster_count][i + thruster_count] = thruster.fwd_current[0]
 
         x_coefficients[i] = thruster.rev_current[1]
-        x_coefficients[i+thruster_count] = thruster.fwd_current[1]
+        x_coefficients[i + thruster_count] = thruster.fwd_current[1]
 
     # All 6 degrees of freedom are constrained
     thruster_constraints_mincurrent = np.row_stack((objective, constraints)) if constraints is not None else \
@@ -246,14 +246,16 @@ def add_colorbar(plot, ax, color_index, norm=None, cmap=plt.cm.turbo):
         norm.vmax
     ], ax=ax, fraction=0.1, shrink=0.5)
 
-def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '=', printEnd = "\r"):
+
+def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=100, fill='=', print_end="\r"):
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
-    filledLength = int(length * iteration // total)
-    bar = fill * filledLength + '-' * (length - filledLength)
-    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    filled_length = int(length * iteration // total)
+    bar = fill * filled_length + '-' * (length - filled_length)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end=print_end)
     # Print New Line on Complete
     if iteration == total:
         print()
+
 
 def plot_effort_surface(plot, ax, thrusters: t.List[Thruster3D], effort_vectors: np.ndarray,
                         extra_constraints: np.ndarray, resolution: int, max_current: float):
@@ -301,6 +303,9 @@ def plot_effort_surface(plot, ax, thrusters: t.List[Thruster3D], effort_vectors:
         mesh_z = np.empty(np.shape(u))
         color_index = np.empty(np.shape(u))
 
+        k = 0
+        print_progress_bar(0, np.size(u), prefix='Progress:', suffix='Complete', length=25)
+
         # Iterate over each vertex and calculate the max effort in that direction
         max_effort = 0
         for i in range(np.shape(u)[0]):
@@ -320,6 +325,9 @@ def plot_effort_surface(plot, ax, thrusters: t.List[Thruster3D], effort_vectors:
                 color_index[i][j] = effort
 
                 max_effort = max(max_effort, effort)
+
+            k = k + 1
+            print_progress_bar(k, np.size(u), prefix='Progress:', suffix='Complete', length=25)
 
         # Adjust each color so that the min and max values correspond to the min and max colors
         color_index_modified = (color_index - color_index.min()) / (color_index.max() - color_index.min())
@@ -467,8 +475,10 @@ def main(thrusters, resolution: int, max_current: float):
     ax_torque = fig.add_subplot(122, projection='3d', proj_type='ortho')
 
     # Plot thrust surface
+    print("Plotting thrust...")
     plot_effort_surface(plt, ax_thrust, thrusters, thruster_orientations, thruster_torques, resolution, max_current)
     # Plot torque surface
+    print("Plotting torque...")
     plot_effort_surface(plt, ax_torque, thrusters, thruster_torques, thruster_orientations, resolution, max_current)
 
     ax_thrust.title.set_text('Thrust')
