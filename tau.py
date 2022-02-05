@@ -326,8 +326,8 @@ def plot_effort_surface(plot, ax, thrusters: t.List[Thruster3D], effort_vectors:
 
                 max_effort = max(max_effort, effort)
 
-            k = k + 1
-            print_progress_bar(k, np.size(u), prefix='Progress:', suffix='Complete', length=25)
+                k = k + 1
+                print_progress_bar(k, np.size(u), prefix='Progress:', suffix='Complete', length=25)
 
         # Adjust each color so that the min and max values correspond to the min and max colors
         color_index_modified = (color_index - color_index.min()) / (color_index.max() - color_index.min())
