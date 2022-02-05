@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import typing as t
 import click
 
+from time import sleep
+
 DEFAULT_RESOLUTION = 100  # Runtime is O(n^2) with respect to resolution!
 DEFAULT_MAX_THRUSTS = [-2.9, 3.71]  # Lifted from the BlueRobotics public performance data (kgf)
 # coefficients of the quadratic approximating current draw as a function of thrust in the forward direction in the form:
@@ -173,6 +175,14 @@ def add_colorbar(plot, ax, color_index):
         color_index.max()
     ], ax=ax, fraction=0.1, shrink=0.5)
 
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '=', printEnd = "\r"):
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    # Print New Line on Complete
+    if iteration == total: 
+        print()
 
 # The main entry point of the program
 # All the Click decorators define various options that can be passed in on the command line
@@ -229,6 +239,10 @@ def main(thrusters, resolution: int, max_current: int):
     # Note: Should probably be its own function, then it can be optimized more (i.e. Numba)
     max_thrust = 0
     max_torque = 0
+    
+    k = 0
+    printProgressBar(0, np.size(u), prefix = 'Progress:', suffix = 'Complete', length = 25)
+    
     for i in range(np.shape(u)[0]):
         for j in range(np.shape(u)[1]):
             z = np.cos(u[i][j]) * np.sin(v[i][j])
@@ -254,7 +268,10 @@ def main(thrusters, resolution: int, max_current: int):
 
             max_thrust = max(max_thrust, thrust)
             max_torque = max(max_torque, torque)
-
+            
+            k = k + 1
+            printProgressBar(k, np.size(u), prefix = 'Progress:', suffix = 'Complete', length = 25)
+            
     # Start plotting results
     matplotlib.use('TkAgg')
     fig = plt.figure(figsize=(12, 6))  # Window size, in inches for some reason
