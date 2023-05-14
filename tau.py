@@ -217,8 +217,6 @@ def get_max_effort(thrusters: t.List[Thruster3D], objective: np.ndarray, constra
     
     # solve quadratic, take the proper point, and clamp it to a maximum of 1.0
     effort_multiplier = min(1., max(quadroots))
-    
-    print()
 
     return max_effort * effort_multiplier
 
