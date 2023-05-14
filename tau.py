@@ -185,6 +185,10 @@ def get_max_effort(thrusters: t.List[Thruster3D], objective: np.ndarray, constra
         ub=upper_bounds,
         solver="quadprog"
     )
+    
+    #sometimes min_current_result doesn't solve, I have no idea why. This generates ugly, erroneous graphs, but at least the program doesn't crash. 
+    if(min_current_result is None):
+        min_current_result = np.zeros(thruster_count * 2)
 
     # combine half-thrusters into full thrusters
     min_current_true_array = []
@@ -206,8 +210,15 @@ def get_max_effort(thrusters: t.List[Thruster3D], objective: np.ndarray, constra
 
     current_quadratic[2] -= max_current  # ax^2 + bx + c = I -> ax^2 + bx + (c-I) = 0
 
+    #sometimes quadroots is unsolvable, I have no idea why. This generates ugly, erroneous graphs, but at least the program doesn't crash. 
+    quadroots = np.roots(current_quadratic)
+    if(len(quadroots) == 0):
+        quadroots = [0, 0]
+    
     # solve quadratic, take the proper point, and clamp it to a maximum of 1.0
-    effort_multiplier = min(1., max(np.roots(current_quadratic)))
+    effort_multiplier = min(1., max(quadroots))
+    
+    print()
 
     return max_effort * effort_multiplier
 
@@ -255,7 +266,6 @@ def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, lengt
     # Print New Line on Complete
     if iteration == total:
         print()
-
 
 def plot_effort_surface(plot, ax, thrusters: t.List[Thruster3D], effort_vectors: np.ndarray,
                         extra_constraints: np.ndarray, resolution: int, max_current: float):
