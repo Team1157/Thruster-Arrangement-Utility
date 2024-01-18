@@ -98,7 +98,7 @@ def rref(A, tol=1.0e-12):
 
 def rotate_to_vector(vectors: np.ndarray, target_dir: np.ndarray) -> np.ndarray:
     """
-    Rotate a group of vectors so that the a specified vector is along the +x axis
+    Rotate a group of vectors so that the specified vector is along the +x axis
     :param vectors: A 2d numpy array in which each column is a 3d vector
     :param target_dir: A 3d vector in the target direction
     :return: A np array with the same size as vectors, with the same rotation applied to each column
@@ -185,9 +185,9 @@ def get_max_effort(thrusters: t.List[Thruster3D], objective: np.ndarray, constra
         ub=upper_bounds,
         solver="quadprog"
     )
-    
-    #sometimes min_current_result doesn't solve, I have no idea why. This generates ugly, erroneous graphs, but at least the program doesn't crash. 
-    if(min_current_result is None):
+
+    # sometimes min_current_result doesn't solve, I have no idea why. This generates ugly, erroneous graphs, but at least the program doesn't crash.
+    if (min_current_result is None):
         min_current_result = np.zeros(thruster_count * 2)
 
     # combine half-thrusters into full thrusters
@@ -210,11 +210,11 @@ def get_max_effort(thrusters: t.List[Thruster3D], objective: np.ndarray, constra
 
     current_quadratic[2] -= max_current  # ax^2 + bx + c = I -> ax^2 + bx + (c-I) = 0
 
-    #sometimes quadroots is unsolvable, I have no idea why. This generates ugly, erroneous graphs, but at least the program doesn't crash. 
+    # sometimes quadroots is unsolvable, I have no idea why. This generates ugly, erroneous graphs, but at least the program doesn't crash.
     quadroots = np.roots(current_quadratic)
-    if(len(quadroots) == 0):
+    if len(quadroots) == 0:
         quadroots = [0, 0]
-    
+
     # solve quadratic, take the proper point, and clamp it to a maximum of 1.0
     effort_multiplier = min(1., max(quadroots))
 
@@ -265,9 +265,10 @@ def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, lengt
     if iteration == total:
         print()
 
+
 def plot_effort_surface(plot, ax, thrusters: t.List[Thruster3D], effort_vectors: np.ndarray,
                         extra_constraints: np.ndarray, resolution: int, max_current: float):
-    # Determine whether the the set of possible efforts is a solid, surface, or line
+    # Determine whether the  set of possible efforts is a solid, surface, or line
 
     # Solve the constraints matrix
     constraints_rref = rref(np.copy(extra_constraints), tol=1e-10)[0]
@@ -343,10 +344,10 @@ def plot_effort_surface(plot, ax, thrusters: t.List[Thruster3D], effort_vectors:
         setup_subplot(ax, thrusters, np.ceil(max_effort))
 
         ax.plot_surface(
-            mesh_x, mesh_y, mesh_z, alpha=0.75, facecolors=cm.turbo(color_index_modified), edgecolors='w', linewidth=0
+            mesh_x, mesh_y, mesh_z, alpha=0.75, facecolors=cm.turbo(color_index_modified), linewidth=0
         )
 
-        # Create a legend mapping the colors of the each plot to its values
+        # Create a legend mapping the colors of each plot to its values
         add_colorbar(plot, ax, color_index)
 
     elif effort_span.shape[1] == 2:
