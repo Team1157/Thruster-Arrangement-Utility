@@ -16,7 +16,7 @@ Note that the coordinate system for this program uses aircraft-style coordinates
 
 ## Configuration
 You can input your own thruster layout by modifying `thrusters.json`. This is the format of the file:
-```json
+```js
 [
   {
     "x": 1,
@@ -24,8 +24,8 @@ You can input your own thruster layout by modifying `thrusters.json`. This is th
     "z": 0,
     "theta": -45,
     "phi": 90
-  },
-  ...
+  }, 
+  // more thrusters ...
 ]
 ```
 The `x`, `y`, and `z` fields are the x, y, and z coordinates of the thruster. See the above image for the coordinate system. The positions should be relative to the vehicle's center of mass (this affects the reference point used for torque measurements). Units are arbitrary, though meters will generally result in properly scaled graphs.
