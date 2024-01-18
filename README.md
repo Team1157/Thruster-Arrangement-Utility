@@ -8,7 +8,7 @@ This program was initially created with the design of underwater ROVs in mind, b
 Note that the coordinate system for this program uses aircraft-style coordinates rather than conventional ones. ![image](https://user-images.githubusercontent.com/43499473/129992017-ad34299f-88f0-4ae0-800b-cbe1d22d72d5.png)
 
 ## Installation
-1. Install [Python 3.9](https://www.python.org/downloads/release/python-3913/). Other version will probably work but one of the libraries didn't work for me on 3.12.
+1. Install [Python 3.9](https://www.python.org/downloads/release/python-3913/). Other versions will probably work but one of the libraries didn't work for me on 3.12.
 2. Install [Git](https://git-scm.com/download/), if you haven't already.
 3. Clone the repository through your IDE or by running `git clone https://github.com/Team1157/Thruster-Arrangement-Utility.git`
 4. From the folder you just download, install the requirements by running `pip install -r requirements.txt`
